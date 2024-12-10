@@ -1,0 +1,260 @@
+<html>
+
+<head>
+  <script>
+    window.onload = canvas;
+    let column = 0;
+    let intialframe = false;
+    // Initialize variables
+    let message_length = 0;
+    let datasets = [];
+    let xIncrement = 0;
+    let yScale = 1; // Initialize yScale
+    let focusScale = 1;
+    let focusMax = [0, 0, 0, 0, 0, 0, 0, 0];
+    let histogramCanvas = 0;
+    let histogramContext = 0;
+    let focusCanvas = 0;
+    let focusContext = 0;
+    function updateFocus(focusData) {
+      focusContext.clearRect(0, 0, focusCanvas.width, focusCanvas.height);
+      const barWidth = focusCanvas.height / focusData.length;
+      if (Math.max(...focusData) > Math.max(...focusMax)) {
+        focusScale = focusCanvas.width / Math.max(...focusData);
+      }
+      for (var i = 0; i < focusData.length; i++) {
+        focusContext.fillStyle = '#ff0000';
+        focusContext.fillRect(0, barWidth * i, focusMax[i] * focusScale, barWidth);
+        focusContext.fillStyle = '#00ff00';
+        focusContext.fillRect(0, barWidth * i, focusData[i] * focusScale, barWidth);
+        if (focusData[i] > focusMax[i]) {
+          focusMax[i] = focusData[i];
+        }
+      }
+
+    }
+    // Function to update the histogram with new data
+    function updateHistogram(newDataArray) {
+      // Clear canvas
+      histogramContext.clearRect(0, 0, histogramCanvas.width, histogramCanvas.height);
+
+      // Find the maximum value in the data arrays
+      const maxDataValue = newDataArray.reduce((max, data) => Math.max(max, Math.max(...data)), -Infinity);
+
+      // Update yScale based on the maximum value
+      yScale = histogramCanvas.height / (maxDataValue * 1.1); // Add some padding to the top
+
+      // Update datasets
+      for (let i = 0; i < newDataArray.length; i++) {
+        datasets[i].data = newDataArray[i];
+      }
+
+      // Draw the filled area below the graph lines
+      for (let i = 0; i < datasets.length; i++) {
+        const dataset = datasets[i];
+        histogramContext.fillStyle = dataset.fillColor;
+        histogramContext.beginPath();
+        histogramContext.moveTo(0, histogramCanvas.height);
+        histogramContext.lineTo(0, histogramCanvas.height - dataset.data[0] * yScale);
+        for (let j = 1; j < dataset.data.length; j++) {
+          histogramContext.lineTo(j * xIncrement, histogramCanvas.height - dataset.data[j] * yScale);
+        }
+        histogramContext.lineTo(histogramCanvas.width, histogramCanvas.height);
+        histogramContext.closePath();
+        histogramContext.fill();
+      }
+
+      // Draw the graph lines
+      for (let i = 0; i < datasets.length; i++) {
+        const dataset = datasets[i];
+        histogramContext.beginPath();
+        histogramContext.moveTo(0, histogramCanvas.height - dataset.data[0] * yScale);
+        for (let j = 1; j < dataset.data.length; j++) {
+          histogramContext.lineTo(j * xIncrement, histogramCanvas.height - dataset.data[j] * yScale);
+        }
+        histogramContext.strokeStyle = dataset.lineColor;
+        histogramContext.stroke();
+      }
+    }
+
+    async function canvas() {
+      var imageCanvas = document.getElementById("imageCanvas");
+      // Create WebSocket connection.
+      const socket = new WebSocket(`ws://192.168.4.1/`);
+      document.getElementById("btn_capture").addEventListener("click", (event) => { sendCommand(0, socket); k = 0; });
+      document.getElementById("btn_focus").addEventListener("click", (event) => { sendCommand(1, socket); k = 0; });
+      document.getElementById("btn_preview").addEventListener("click", (event) => { sendCommand(2, socket); k = 0; });
+      document.getElementById("btn_abort").addEventListener("click", (event) => { sendCommand(3, socket); k = 0; });
+      document.getElementById("btn_expose").addEventListener("click", (event) => { sendCommand(4, socket); k = 0; });
+
+      // Change binary type from "blob" to "arraybuffer"
+      socket.binaryType = "arraybuffer";
+      if (imageCanvas && imageCanvas.getContext("2d")) {
+        const imageContext = imageCanvas.getContext("2d");
+        const image = imageContext.createImageData(1, imageCanvas.height);
+        histogramCanvas = document.getElementById('histogramCanvas');
+        histogramContext = histogramCanvas.getContext('2d');
+        focusCanvas = document.getElementById('focusCanvas');
+        focusContext = focusCanvas.getContext('2d');
+
+
+
+        const pixel = image.data;
+        var init = 1;
+        const imagedata = 1;
+        const focusdata = 2;
+        const histogramdata = 3;
+        const textdata = 4;
+        const gammaFactor = 0.5;
+        for (var i = 0; i < imageContext.canvas.width; i++) {
+          for (var j = 0; j < imageContext.canvas.height; j++) {
+            var row = j * imageContext.canvas.width * 4;
+            pixel[row + i * 4] = 255 * (Math.sin(j * Math.PI / 10) * Math.sin(i * Math.PI / 10) + 1);//255 - pixel[row + i]; //red
+            pixel[row + i * 4 + 1] = 255 * (Math.sin(j * Math.PI / 10) * Math.sin(i * Math.PI / 10) + 1);//255 - pixel[row + i + 1]; //green
+            pixel[row + i * 4 + 2] = 255 * (Math.sin(j * Math.PI / 10) * Math.sin(i * Math.PI / 10) + 1);//255 - pixel[row + i + 2]; //blue
+            pixel[row + i * 4 + 3] = 255;
+          }
+        }
+
+
+        socket.addEventListener("message", (event) => {
+          if (event.data instanceof ArrayBuffer) {
+            // binary frame
+            //message_type uint8
+            //message_length uint32
+            let offset = 0;
+            const view = new DataView(event.data);
+            while (offset < event.data.byteLength) {
+              message_type = view.getUint16(0 + offset, true);
+              message_length = view.getUint16(2 + offset, true) - 4;
+              offset = offset + 4;
+              if (message_type == imagedata) {
+                const imageDataArray = new Uint8Array(event.data.slice(offset, offset + message_length))
+                for (var i = 0; i < imageDataArray.length / 3; i++) {
+                  var row = (imageContext.canvas.height - i) * 4;
+
+                  pixel[row] = Math.pow((imageDataArray[3 * i] / 255.0), gammaFactor) * 255;
+                  pixel[row + 1] = Math.pow((imageDataArray[3 * i + 1] / 255.0), gammaFactor) * 255;
+                  pixel[row + 2] = Math.pow((imageDataArray[3 * i + 2] / 255.0), gammaFactor) * 255;
+                  pixel[row + 3] = 255;
+
+                }
+                imageContext.putImageData(image, column, 0);
+
+                column++;
+                offset += message_length;
+              }
+              if (message_type == focusdata) {
+                if (intialframe == false) {
+                  const view = new DataView(event.data);
+                  const focusDataArray = new Float32Array(event.data.slice(offset, offset + message_length));
+                  for (i = 0; i < 8; i++) {
+                    //focusDataArray[i]=view.getFloat32(offset+2*i,false)
+                  }
+                  updateFocus(focusDataArray);
+                } else {
+                  intialframe = false;
+                }
+
+              }
+              if (message_type == histogramdata) {
+                // Calculate xIncrement based on data length
+                xIncrement = histogramCanvas.width / ((message_length / 6) - 1);
+                datasets = [];
+                const RGB = ["255,0,0", "0,255,0", "0,0,255"];
+                for (var i = 0; i < 3; i++) {
+                  const dataArray = new Uint16Array(event.data.slice(offset + i * (message_length / 3), offset + (i + 1) * (message_length / 3)));
+                  const fillColor = `rgba(${RGB[i]}, 0.5)`;
+                  const lineColor = `rgb(${RGB[i]})`;
+                  datasets.push({ data: dataArray, fillColor, lineColor });
+                }
+                offset += message_length;
+                updateHistogram(datasets.map(dataset => dataset.data));
+              }
+
+            }
+
+
+            console.log(view.getInt8(0));
+
+            if (column > imageCanvas.width) {
+              column = 0;
+            }
+            // if(column>imageContext.canvas.height){
+            //   column=0;
+            // }
+
+
+          } else {
+            // text frame
+            console.log(event.data);
+          }
+        });
+        socket.addEventListener("error", (event) => {
+          console.log(event);
+        });
+
+      }
+    }
+
+
+    async function sendCommand(command, socket) {
+      intialframe = true;
+
+      commandBuffer = new ArrayBuffer(18);
+      cmd_form = document.getElementById("command_form");
+      imageCanvas.width = Math.floor(cmd_form.lines.value / 8);
+      column = 0;
+      commandView = new DataView(commandBuffer);
+      commandView.setUint16(0, 1337, true);
+      commandView.setUint8(2, command);
+      commandView.setUint16(3, cmd_form.exp_time.value, true);
+      commandView.setUint8(5, cmd_form.resolution.value);
+      commandView.setUint8(6, cmd_form.gain.value);
+      commandView.setUint32(7, cmd_form.lines.value, true);
+      commandView.setUint16(11, cmd_form.steps_line.value, true);
+      commandView.setUint16(13, cmd_form.crop_start.value, true);
+      commandView.setUint16(15, cmd_form.crop_end.value, true);
+      commandView.setUint8(17, cmd_form.preview_avg.value)
+      socket.send(commandView.buffer);
+    }
+  </script>
+
+</head>
+
+<body>
+  <canvas id="imageCanvas" width="800" height="1000" style="border-style: dotted;border-width: 2px;">
+
+  </canvas>
+  <canvas id="focusCanvas" width="500" height="700" style="border-style: dotted;border-width: 2px;"></canvas>
+  <canvas id="histogramCanvas" width="512" height="300" style="border-style: dotted;border-width: 2px;">
+
+  </canvas>
+  <div>
+    <form id="command_form">
+      <label for="exp_time">Exposure time[1/s]:</label>
+
+      <input value="100" name="exp_time" type="number">
+      <br>
+      <label for="resolution">Resolution:</label>
+      <input name="resolution" type="number">
+      <br>
+      <label for="gain">Gain:</label><input value="0" name="gain" type="number"><br>
+      <label value="100" for="lines">Lines:</label><input name="lines" type="number"><br>
+      <label for="steps_line">Steps per line:</label><input name="steps_line" type="number"><br>
+
+
+      <label for="crop_start">Crop start:</label><input name="crop_start" type="number"><br>
+      <label for="crop_end">Crop end:</label><input name="crop_end" type="number"><br>
+      <label for="preview_avg">Preview avarage:</label><input name="preview_avg" type="number"><br>
+      <input type="button" id="btn_capture" value="capture">
+      <input type="button" id="btn_focus" value="focus">
+      <input type="button" id="btn_preview" value="preview">
+      <input type="button" id="btn_abort" value="abort">
+      <input type="button" id="btn_expose" value="expose">
+
+    </form>
+  </div>
+</body>
+
+</html>

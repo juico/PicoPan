@@ -1,0 +1,93 @@
+
+.program clock
+.wrap_target
+    set pins,1     [14]
+    set pins,0     [14]
+.wrap
+
+.program sync
+wait 0 gpio 12       
+wait 1 gpio 12       
+.wrap_target
+;als sync signaal omhoog gaat ook een sync signaal generen
+irq clear 4 [29]    
+nop [29]            
+nop [29]            
+.wrap
+
+.program data_in
+.side_set 1
+    pull block      side 0
+    out y,32        side 0
+.wrap_target
+    mov x,y         side 0 
+    irq wait 5  side 0  
+    irq wait 4  side 0
+inloop:
+    in pins, 8      side 1 [14]
+    in pins, 8      side 0 [13]
+    jmp x--,inloop  side 0
+;    push            side 0
+.wrap
+.program trigger
+    pull block
+    out y,32
+.wrap_target
+    mov x,y
+waitloop:
+    jmp x-- waitloop
+    irq wait 4  [28]
+    set pins 0 [29]
+    set x 7
+trigb:
+    jmp x-- trigb [29]
+    irq clear 5       [29]
+    set pins 1
+.wrap
+% c-sdk {
+// this is a raw helper function for use by the user which sets up the GPIO output, and configures the SM to output on a particular pin
+#include "hardware/pio.h"
+
+void clock_program_init(PIO pio, uint sm, uint offset, uint pin) {
+   pio_gpio_init(pio, pin);
+   pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);
+   pio_sm_config c = clock_program_get_default_config(offset);
+   sm_config_set_set_pins(&c, pin, 1);
+   sm_config_set_clkdiv_int_frac(&c, 1,0);
+   pio_sm_init(pio, sm, offset, &c);
+}
+void sync_program_init(PIO pio, uint sm, uint offset) {
+   pio_gpio_init(pio,14);
+   pio_sm_config c = sync_program_get_default_config(offset);
+   pio_sm_set_consecutive_pindirs(pio,sm,14,1,true);
+   //sm_config_set_sideset_pins(&c,14);
+   sm_config_set_clkdiv_int_frac(&c, 1,0);
+   pio_sm_init(pio, sm, offset, &c);
+}
+
+void data_in_program_init(PIO pio, uint sm, uint offset, uint pin) {
+    for(int i =0;i<9;i++){
+        pio_gpio_init(pio, pin+i);
+    }
+   pio_gpio_init(pio,15);
+    pio_sm_set_consecutive_pindirs(pio, sm, pin, 8, false);
+    pio_sm_set_consecutive_pindirs(pio,sm,15,1,true);
+    pio_sm_config c = data_in_program_get_default_config(offset);
+    sm_config_set_in_pins(&c, pin);
+    
+   sm_config_set_sideset_pins(&c,15);
+    sm_config_set_in_shift(&c, false, true, 32);
+    //sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+    sm_config_set_clkdiv_int_frac(&c, 1,0);
+    pio_sm_init(pio, sm, offset, &c);
+}
+
+void trigger_program_init(PIO pio, uint sm, uint offset, uint pin) {
+   pio_gpio_init(pio, pin);
+   pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);
+   pio_sm_config c = trigger_program_get_default_config(offset);
+   sm_config_set_set_pins(&c, pin, 1);
+   sm_config_set_clkdiv_int_frac(&c, 1,0);
+   pio_sm_init(pio, sm, offset, &c);
+}
+%}

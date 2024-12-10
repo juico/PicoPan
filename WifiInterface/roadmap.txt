@@ -1,0 +1,9 @@
+Een verhaaltje voor sjors
+
+wat moet werken
+
+ccd initializeren
+ccd capture starten
+    -data ready flag
+    -buffer location
+        -buffer size
