@@ -1,15 +1,17 @@
-#define CYW43_SPI_PIO_PREFERRED_PIO 1
 #include <math.h>
 #include <stdio.h>
+#include "pico/stdlib.h"
+
+#include "pico/cyw43_arch.h"
 
 #include "camera.h"
 #include "ak8419.h"
-#include "pico/cyw43_arch.h"
+#include "pico/util/queue.h"
+
 #include "pico/multicore.h"
-#include "pico/stdlib.h"
 #include "pico_ws_server/web_socket_server.h"
 #include "tiff.h"
-
+#include "hardware/clocks.h"
 extern "C" {
 #include "include/dhcpserver.h"
 #include "include/dnsserver.h"
@@ -18,7 +20,8 @@ extern "C" {
 uint32_t linecount = 0;
 uint32_t conn_list[MAX_CON];
 extern int8_t camera_state;
-
+queue_t commandqueue;
+queue_t dataqueue;
 void on_connect(WebSocketServer &server, uint32_t conn_id) {
   printf("WebSocket opened conn_id:%d\n", conn_id);
   server.sendMessage(conn_id, "hello");
@@ -53,8 +56,8 @@ void on_message(WebSocketServer &server, uint32_t conn_id, const void *data,
     // command recieved
     struct web_command test_command;
     memcpy(&test_command, (uint8_t *)data + 2, 16);
-
-    multicore_fifo_push_blocking((uint32_t)&test_command);
+    queue_add_blocking(&commandqueue,&test_command);
+    //multicore_fifo_push_blocking((uint32_t)&test_command);
     switch (test_command.command) {
     case COMMAND_CAPTURE:
       printf("Capture started");
@@ -81,16 +84,22 @@ void on_message(WebSocketServer &server, uint32_t conn_id, const void *data,
 
 int main() {
 set_sys_clock_khz(CLOCK_SPEED/1000,true);
+queue_init(&commandqueue,sizeof(web_command), 4);
+queue_init(&dataqueue,sizeof(web_data),4);
   stdio_init_all();
   sleep_ms(1000);
-  if (sd_init()) {
+    if (sd_init()) {
     printf("SD card mounted");
   }
-  if (cyw43_arch_init() != 0) {
+    multicore_launch_core1(camera_task);
+sleep_ms(1000);
+    if (cyw43_arch_init() != 0) {
     printf("cyw43_arch_init failed\n");
     while (1)
       tight_loop_contents();
   }
+
+
   const char *ap_name = "picow_test";
 #if 1
   const char *password = "password";
@@ -98,8 +107,7 @@ set_sys_clock_khz(CLOCK_SPEED/1000,true);
   const char *password = NULL;
 #endif
 
-  cyw43_arch_enable_ap_mode(ap_name, password, CYW43_AUTH_WPA2_AES_PSK);
-
+  cyw43_arch_enable_ap_mode(ap_name, 0, CYW43_AUTH_OPEN);
   ip_addr_t mask;
   ip_addr_t gateway;
   IP4_ADDR(ip_2_ip4(&gateway), 192, 168, 4, 1);
@@ -132,26 +140,32 @@ set_sys_clock_khz(CLOCK_SPEED/1000,true);
       tight_loop_contents();
     }
   }
-  multicore_launch_core1(camera_task);
 
   printf("WebSocket server started\n");
   uint32_t timedelta = time_us_32();
   while (1) {
-    if (multicore_fifo_rvalid()) {
-      uint32_t msg = multicore_fifo_pop_blocking();
-      uint16_t *msg_len = (uint16_t *)((uint8_t *)msg + 2);
-      printf("msg_len: %i\n", *msg_len);
+    if (!queue_is_empty(&dataqueue)) {
+      struct web_data new_data;
+      if(queue_try_remove(&dataqueue,&new_data)){
+        printf("Data recieved" );
+      }
+      else{
+        printf("Unable to recieve data\n");
+      }
+    
+      // uint16_t msg_len = ((uint16_t *)msg)[1];
+      printf("msg_len: %lu\n", new_data.length);
       for (int i = 0; i < MAX_CON; i++) {
         if (conn_list[i]) {
-          server.sendMessage(conn_list[i], (uint8_t *)msg, *msg_len);
+          server.sendMessage(conn_list[i], new_data.buffer, new_data.length);
         }
       }
       timedelta = time_us_32();
       printf("sending line\n");
     }
-    if (camera_state != COMMAND_CAPTURE) {
+    // if (camera_state != COMMAND_CAPTURE) {
       cyw43_arch_poll();
-    }
+    // }
   }
   dns_server_deinit(&dns_server);
   dhcp_server_deinit(&dhcp_server);

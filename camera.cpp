@@ -6,6 +6,8 @@
 #include "hardware/gpio.h"
 #include "hardware/pwm.h"
 #include "pico/multicore.h"
+#include "pico/util/queue.h"
+
 #include "tiff.h"
 #include <cstdlib>
 #include <cstring>
@@ -22,6 +24,8 @@ extern int buffer_num;
 extern bool data_ready;
 extern uint8_t *pixel_buffers[2];
 extern bool write_ready;
+extern queue_t commandqueue;
+extern queue_t dataqueue;
 uint32_t avg_sum_dark_red, avg_sum_dark_green, avg_sum_dark_blue;
 uint32_t avg_sum_wb_red, avg_sum_wb_green, avg_sum_wb_blue;
 uint32_t steps_per_line;
@@ -29,7 +33,7 @@ uint slice_num, channel;
 uint64_t step_time_start;
 int8_t camera_state = -1;
 
-uint8_t msg_preview[MSG_HEADER_LEN + 3 * CCD_PIXELS / (8*3)] = {};
+uint8_t msg_preview[MSG_HEADER_LEN + 3 * 5400 / 8] = {};
 uint8_t msg_focus[MSG_HEADER_LEN + 8 * 4] = {};
 uint8_t msg_histogram[MSG_HEADER_LEN + HISTOGRAM_LENGTH] = {};
 
@@ -124,12 +128,12 @@ void return_stepper(int frequency) {
 #define return_freq 250
   uint64_t step_time_end = time_us_64();
 
-  pwm_set_wrap(slice_num, 1000000 / 10000);
+  pwm_set_wrap(slice_num, 1000000 / (return_freq * steps_per_line));
   pwm_set_chan_level(slice_num, channel,
-                     500000 / 10000);
+                     500000 / (return_freq * steps_per_line));
 
   sleep_us((step_time_end - step_time_start) * frequency /
-           10000);
+           (return_freq * steps_per_line));
   pwm_set_enabled(slice_num, false);
   gpio_put(ENABLE_PIN, 1);
 }
@@ -162,14 +166,14 @@ void camera_task() {
   uint16_t *pixelbuffer;
   struct web_command command;
   int bin_step = 0;
-  int pixels_per_line = CCD_PIXELS/3;
-  int real_pixels = 7168;
+  int pixels_per_line = 5400;
+  int real_pixels = 4864;
   int start_pixels = 272;
 
   uint32_t ratio = 8 * 51 * 16;
   uint32_t steps_total = 3*150 * ratio / 18;
   uint32_t lines_total = 4000;
-  steps_per_line = 21;//55;// steps_total / lines_total;
+  steps_per_line = steps_total / lines_total;
 
   gpio_init(DIR_PIN);
   gpio_set_dir(DIR_PIN, GPIO_OUT);
@@ -217,7 +221,12 @@ void camera_task() {
                  *msg_preview_type);
           *msg_preview_type = MSG_PREVIEW;
           *msg_preview_len = sizeof(msg_preview);
-          multicore_fifo_push_blocking((uint32_t)msg_preview);
+          struct web_data preview_data;
+          preview_data.length= sizeof(msg_preview);
+          preview_data.buffer=msg_preview;
+          queue_add_blocking(&dataqueue,&preview_data);
+          printf("preview pushed on queue");
+          // multicore_fifo_push_blocking((uint32_t)msg_preview);
           bin_step = 0;
           // printf("sending line to other core");
           //}
@@ -279,19 +288,24 @@ void camera_task() {
         for (int j = 0; j < segnum; j++) {
           focus = 0;
           for (int i = j * seglen; i < (seglen * (j + 1) - 2); i++) {
-            diff = (int16_t)(__bswap16(pixelbuffer[i * 3]) >> 1) -
-                   (int16_t)(__bswap16(pixelbuffer[(i + 2) * 3]) >> 1);
+            diff = (int16_t)(__builtin_bswap16(pixelbuffer[i * 3]) >> 1) -
+                   (int16_t)(__builtin_bswap16(pixelbuffer[(i + 2) * 3]) >> 1);
             focus += (diff * diff);
-            diff = (int16_t)(__bswap16(pixelbuffer[i * 3 + 1]) >> 1) -
-                   (int16_t)(__bswap16(pixelbuffer[(i + 2) * 3 + 1]) >> 1);
+            diff = (int16_t)(__builtin_bswap16(pixelbuffer[i * 3 + 1]) >> 1) -
+                   (int16_t)(__builtin_bswap16(pixelbuffer[(i + 2) * 3 + 1]) >> 1);
             focus += (diff * diff);
-            diff = (int16_t)(__bswap16(pixelbuffer[i * 3 + 2]) >> 1) -
-                   (int16_t)(__bswap16(pixelbuffer[(i + 2) * 3 + 2]) >> 1);
+            diff = (int16_t)(__builtin_bswap16(pixelbuffer[i * 3 + 2]) >> 1) -
+                   (int16_t)(__builtin_bswap16(pixelbuffer[(i + 2) * 3 + 2]) >> 1);
             focus += (diff * diff);
           }
           focus_data[j] = (float)focus;
         }
-        multicore_fifo_push_blocking((uint32_t)msg_focus);
+        struct web_data web_focus;
+        web_focus.buffer=msg_focus;
+        web_focus.length=sizeof(msg_focus);
+        queue_add_blocking(&dataqueue,&web_focus);
+
+        // multicore_fifo_push_blocking((uint32_t)msg_focus);
 
         // sleep_ms(30);
         write_ready = true;
@@ -312,7 +326,12 @@ void camera_task() {
           histogram_data[(pixel_buffers[buffer_num ^ 1][i * 6 + 4] >> 1) +
                          256]++;
         }
-        multicore_fifo_push_blocking((uint32_t)msg_histogram);
+        struct web_data web_historgram;
+        web_historgram.length=sizeof(msg_histogram);
+        web_historgram.buffer=msg_histogram;
+                  queue_add_blocking(&dataqueue,&web_historgram);
+
+        // multicore_fifo_push_blocking((uint32_t)msg_histogram);
         write_ready = true;
 
         data_ready = false;
@@ -323,8 +342,10 @@ void camera_task() {
       break;
     }
     // if command is recieved from other core
-    if (multicore_fifo_rvalid()) {
-      memcpy(&command, (void *)multicore_fifo_pop_blocking(), 16);
+    if (!queue_is_empty(&commandqueue)) {
+      // memcpy(&command, (void *)multicore_fifo_pop_blocking(), 16);
+                queue_remove_blocking(&commandqueue,&command);
+
       lines_remaining = command.lines;
       set_exposure_time(command.exp_time);
       // set_gain(command.gain);

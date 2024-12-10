@@ -1,6 +1,6 @@
 
 #include <stdio.h>
-
+#include <cstdint>
 using namespace std;
 
 #define D0_PIN 1
@@ -18,9 +18,10 @@ using namespace std;
 
 #define LED_PIN 25
 
-#define CCD_PIXELS 24000//16384
+#define CCD_PIXELS 16384
 #define CCD_BYTES CCD_PIXELS * 2
 #define CLOCK_SPEED 150000000
+
 struct __attribute__((__packed__)) ak8419_config {
   bool power_down : 1;
   uint8_t clock_freq : 2;
@@ -251,4 +252,4 @@ void set_gain(uint8_t gain0, uint8_t gain1, uint8_t gain2);
 void set_offset(uint8_t offset0, uint8_t offset1, uint8_t offset2);
 void tiff_create();
 void print_config();
-void tiff_write_header(u_int8_t *rawbuffer, struct tiff_header header);
+void tiff_write_header(uint8_t *rawbuffer, struct tiff_header header);

@@ -1,6 +1,6 @@
 
 #include <stdio.h>
-
+#include <cstdint>
 #define TIFF_SHORT 3
 #define TIFF_LONG 4
 #define TIFF_RATIONAL 5
@@ -23,12 +23,12 @@ struct tiff_header {
   long blockSize;
 };
 struct simple_buffer {
-  u_int32_t length;
-  u_int32_t index;
+  uint32_t length;
+  uint32_t index;
   uint8_t *buffer;
 };
 bool sd_init();
 
 bool tiff_create(long image_length, long image_width);
-bool tiff_write_line(u_int8_t *buffer, u_int32_t length);
+bool tiff_write_line(uint8_t *buffer, uint32_t length);
 bool tiff_close();

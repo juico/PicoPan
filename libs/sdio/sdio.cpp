@@ -908,19 +908,19 @@ void rp2040_sdio_init(int clock_divider) {
 
   // Set pullups
   gpio_pull_up(SDIO_CMD);
-  gpio_pull_down(SDIO_CLK);
+  //gpio_pull_down(SDIO_CLK);
   gpio_pull_up(SDIO_D0);
   gpio_pull_up(SDIO_D1);
   gpio_pull_up(SDIO_D2);
   gpio_pull_up(SDIO_D3);
 
   // Fast Slew
-  padsbank0_hw->io[SDIO_CMD] |= PADS_BANK0_GPIO0_SLEWFAST_BITS;
-  padsbank0_hw->io[SDIO_CLK] |= PADS_BANK0_GPIO0_SLEWFAST_BITS;
-  padsbank0_hw->io[SDIO_D0] |= PADS_BANK0_GPIO0_SLEWFAST_BITS;
-  padsbank0_hw->io[SDIO_D1] |= PADS_BANK0_GPIO0_SLEWFAST_BITS;
-  padsbank0_hw->io[SDIO_D2] |= PADS_BANK0_GPIO0_SLEWFAST_BITS;
-  padsbank0_hw->io[SDIO_D3] |= PADS_BANK0_GPIO0_SLEWFAST_BITS;
+  pads_bank0_hw->io[SDIO_CMD] |= PADS_BANK0_GPIO0_SLEWFAST_BITS;
+  pads_bank0_hw->io[SDIO_CLK] |= PADS_BANK0_GPIO0_SLEWFAST_BITS;
+  pads_bank0_hw->io[SDIO_D0] |= PADS_BANK0_GPIO0_SLEWFAST_BITS;
+  pads_bank0_hw->io[SDIO_D1] |= PADS_BANK0_GPIO0_SLEWFAST_BITS;
+  pads_bank0_hw->io[SDIO_D2] |= PADS_BANK0_GPIO0_SLEWFAST_BITS;
+  pads_bank0_hw->io[SDIO_D3] |= PADS_BANK0_GPIO0_SLEWFAST_BITS;
 
   // Redirect GPIOs to PIO
   gpio_set_function(SDIO_CMD, GPIO_FUNC_PIO1);

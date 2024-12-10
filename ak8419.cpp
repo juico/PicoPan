@@ -23,10 +23,6 @@ uint sm_trigger = 2;
 uint sm_sync = 3;
 
 uint16_t int_time = 100;
-// uint32_t ratio = 8 * 51 * 16;
-// uint32_t steps_total = 150 * ratio / 18;
-// uint32_t lines_total = 4000;
-// uint32_t steps_per_line = steps_total / lines_total;
 uint8_t reg_table[87] = {
     0b00000000, 0b00000010, 0b00000000, 0b00000001,
     0b00000000, 0b00000000, 0b10000000, 0b10000000, // 00h-07h
@@ -60,8 +56,8 @@ int buffer_num = 0;
 bool data_ready = false;
 bool registercheck = false;
 bool write_ready = true;
-u_int32_t lines_aqcuired = 0;
-u_int32_t lines_written = 0;
+uint32_t lines_aqcuired = 0;
+uint32_t lines_written = 0;
 
 struct ak8419_config *ccd_config = (ak8419_config *)reg_table;
 
@@ -137,7 +133,6 @@ uint8_t read_register(uint8_t adress)
   gpio_pull_up(SDATA_PIN);
   for (int i = 0; i < 8; i++)
   {
-
     sleep_us(5);
     register_value = register_value << 1 | gpio_get(SDATA_PIN);
     gpio_put(SDCLK_PIN, 1);
@@ -154,7 +149,6 @@ bool check_registers()
 {
   for (uint8_t i = 0; i < 87; i++)
   {
-    // printf("reg %x : %x,[%x]\n", i, read_register(i), reg_table[i]);
     if (read_register(i) != reg_table[i])
     {
       return false;
@@ -175,30 +169,22 @@ void write_registers()
 void toggle_reset()
 {
   gpio_put(RESETB_PIN, 0);
-  sleep_ms(1); // Maybe this needs to be longer?
+  sleep_ms(1); 
   gpio_put(RESETB_PIN, 1);
 }
 void data_in_finish()
 {
   dma_hw->ints0 = 1u << pixel_dma_chan;
   lines_aqcuired++;
-  // if (write_ready)
-  // {
   // Only if the previous pixel buffer is written to the SD card we should
   // switch buffer.
   buffer_num = buffer_num ^ write_ready;
   write_ready = false;
-  // send move command to stepper motor pio
-  // pio_sm_put(pio0, sm_step, steps_per_line - 1);
-  // pio_sm_put(pio0, sm_step, clock_speed / (int_time * steps_per_line * 2));
-  // }
-            //buffer_num = buffer_num ^ 1;
-  pio_sm_exec(pio_ak8419,sm_data_in,pio_encode_jmp(offset_data_in+2));
+  pio_sm_exec(pio_ak8419, sm_data_in, pio_encode_jmp(offset_data_in + 2));
   pio_sm_clear_fifos(pio_ak8419, sm_data_in);
-    pio_sm_exec(pio_ak8419,sm_data_in,pio_encode_push(false,false));
+  pio_sm_exec(pio_ak8419, sm_data_in, pio_encode_push(false, false));
 
   pio_sm_clear_fifos(pio_ak8419, sm_data_in);
-
 
   data_ready = true;
   dma_channel_set_write_addr(pixel_dma_chan, pixel_buffers[buffer_num], true);
@@ -211,12 +197,11 @@ bool ccd_start_capture()
   ccd_config->sync_pattern = true;
   ccd_config->tg_enable = false;
   ccd_config->ADCK0_pin_out = 0b101;
-
+  ccd_config->clock_freq=0b11;
   write_registers();
   if (!check_registers())
   {
-    // return false;
-    printf("register schrijven niet gelukt\n");
+    printf("Writing AK8419 registers failed\n");
   }
 
   // Reinitilize the pio programs
@@ -255,7 +240,7 @@ bool ccd_start_capture()
 
   pio_sm_clear_fifos(pio_ak8419, sm_data_in);
   pio_sm_set_enabled(pio_ak8419, sm_data_in, true);
-            pio_sm_put(pio_ak8419, sm_data_in, CCD_PIXELS - 1+128*3);
+  pio_sm_put(pio_ak8419, sm_data_in, CCD_PIXELS - 1 + 128 * 3);
   pio_sm_set_enabled(pio_ak8419, sm_trigger, true);
   pio_sm_put(pio_ak8419, sm_trigger, CLOCK_SPEED / int_time);
 
@@ -294,7 +279,8 @@ bool ccd_init()
   // note sure if needed?
   for (int i = 0; i < 8; i++)
   {
-    gpio_pull_down(D0_PIN + i);
+    // gpio_pull_up(D0_PIN + i);
+    pio_gpio_init(pio_ak8419, D0_PIN + i);
   }
   // configure pwm channel for ADC clock
 
@@ -302,7 +288,7 @@ bool ccd_init()
   uint slice_num = pwm_gpio_to_slice_num(OSCI_PIN);
   uint channel = pwm_gpio_to_channel(OSCI_PIN);
   pwm_set_wrap(slice_num, 29);
-  pwm_set_chan_level(slice_num, channel, 15);
+  pwm_set_chan_level(slice_num, channel, 14);
   pwm_set_enabled(slice_num, true);
 
   // toggle reset after startup
@@ -331,26 +317,6 @@ bool ccd_init()
 
   // Setup for DMA from data_in FIFO a ping pong pixel_buffers
   pixel_dma_chan = dma_claim_unused_channel(true);
-
-  // This defines how many times per second the TRIGB pulse is send and thus
-  // defines the integration time
-  // set_exposure_time(100);
-  // while (lines_written < lines_total)
-  // {
-  //     if (data_ready)
-  //     {
-  //         data_ready = false;
-  //         file.write(pixel_buffers[buffer_num ^ 1], CCD_BYTES);
-  //         write_ready = true;
-  //         lines_written++;
-  //     }
-  // }
-
-  // stepper_return();
-
-  // // turn on LED to show that the acquisition is done
-  // gpio_put(LED_PIN, 1);
-  // printf("acquired:%d, written:%d\n", lines_aqcuired, lines_written);
   return true;
 }
 
@@ -487,34 +453,3 @@ void print_config()
   printf("SH3_phase = %d\n", ccd_config->SH3_phase);
 }
 
-// int main()
-// {
-//     set_sys_clock_khz(clock_speed / 1000, true);
-//     stdio_init_all();
-//     // reg_table[0x06]=0b01110000;
-//     reg_table[0x01] = 0b01000010; // sync mode output
-//     reg_table[0x0C] = 0b00101000; // TG output disable with debug at d0-d3
-
-//     sleep_ms(1000);
-//     // SD card startup
-//     //
-
-//     return 0;
-// }
-
-// void stepper_init()
-// {
-//     gpio_init(DIR_PIN);
-//     gpio_set_dir(DIR_PIN, GPIO_OUT);
-//     gpio_put(DIR_PIN, 1);
-//     uint offset_step = pio_add_program(pio_ak8419, &step_program);
-//     step_program_init(pio_ak8419, sm_step, offset_step, STEP_PIN);
-//     pio_sm_put(pio_ak8419, sm_step, steps_per_line - 1);
-//     pio_sm_put(pio_ak8419, sm_step, clock_speed / (int_time * steps_per_line
-//     * 2)); pio_sm_set_enabled(pio_ak8419, sm_step, true);
-// }
-// void stepper_return(){
-//     gpio_put(DIR_PIN, 0);
-//     pio_sm_put(pio_ak8419, sm_step, steps_per_line * lines_total - 1);
-//     pio_sm_put(pio_ak8419, sm_step, clock_speed / RETURN_SPEED);
-// }

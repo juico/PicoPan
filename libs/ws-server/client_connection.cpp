@@ -33,8 +33,8 @@ bool ClientConnection::sendRaw(const void* data, size_t size) {
 
   // TODO: only write tcp_sndbuf() bytes, queue the rest (use tcp_sent() callback)
   // Note: ERR_MEM still seems to be possible for < tcp_sndbuf()
-  err_t err = tcp_write(pcb, data, size, TCP_WRITE_FLAG_COPY);
-  //err_t err = tcp_write(pcb, data, size, false);
+  //err_t err = tcp_write(pcb, data, size, TCP_WRITE_FLAG_COPY);
+  err_t err = tcp_write(pcb, data, size, false);
 
   return err == ERR_OK;
 }
