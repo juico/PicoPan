@@ -16,6 +16,7 @@ extern "C" {
 #include "include/dhcpserver.h"
 #include "include/dnsserver.h"
 }
+#include <lwip/stats.h>
 #define MAX_CON 5
 uint32_t linecount = 0;
 uint32_t conn_list[MAX_CON];
@@ -88,9 +89,9 @@ queue_init(&commandqueue,sizeof(web_command), 4);
 queue_init(&dataqueue,sizeof(web_data),4);
   stdio_init_all();
   sleep_ms(1000);
-    if (sd_init()) {
-    printf("SD card mounted");
-  }
+  //   if (sd_init()) {
+  //   printf("SD card mounted");
+  // }
     multicore_launch_core1(camera_task);
 sleep_ms(1000);
     if (cyw43_arch_init() != 0) {
@@ -131,9 +132,9 @@ sleep_ms(1000);
   server.setCloseCallback(on_disconnect);
   server.setMessageCallback(on_message);
   printf("Starting server at %s on port %u\n",
-         ip4addr_ntoa(netif_ip4_addr(netif_list)), 80);
+         ip4addr_ntoa(netif_ip4_addr(netif_list)), 81);
 
-  bool server_ok = server.startListening(80);
+  bool server_ok = server.startListening(81);
   if (!server_ok) {
     printf("Failed to start WebSocket server\n");
     while (1) {
@@ -147,24 +148,30 @@ sleep_ms(1000);
     if (!queue_is_empty(&dataqueue)) {
       struct web_data new_data;
       if(queue_try_remove(&dataqueue,&new_data)){
-        printf("Data recieved" );
+        //printf("Data recieved" );
       }
       else{
         printf("Unable to recieve data\n");
       }
     
       // uint16_t msg_len = ((uint16_t *)msg)[1];
-      printf("msg_len: %lu\n", new_data.length);
+      //printf("msg_len: %lu\n", new_data.length);
       for (int i = 0; i < MAX_CON; i++) {
         if (conn_list[i]) {
           server.sendMessage(conn_list[i], new_data.buffer, new_data.length);
         }
       }
       timedelta = time_us_32();
-      printf("sending line\n");
+      //printf("sending line\n");
     }
     // if (camera_state != COMMAND_CAPTURE) {
       cyw43_arch_poll();
+      server.popMessages();
+      if((time_us_32()-timedelta)>5000000){
+        timedelta=time_us_32();
+      stats_display();
+
+      }
     // }
   }
   dns_server_deinit(&dns_server);

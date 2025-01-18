@@ -1,0 +1,3 @@
+[submodule "libs/pico-ws-server"]
+	path = libs/pico-ws-server
+	url = https://github.com/cadouthat/pico-ws-server

@@ -5,7 +5,11 @@ cmake_minimum_required(VERSION 3.13)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-file(READ static.html.gz PICO_WS_SERVER_STATIC_HTML_HEX HEX)
+#file(READ static.html.gz PICO_WS_SERVER_STATIC_HTML_HEX HEX)
+set(STATIC_HTML_PATH ${CMAKE_CURRENT_LIST_DIR})
+set(STATIC_HTML_FILENAME static_class.html)
+
+
 add_compile_options( 
     -Wall
         -Wno-format          # int != int32_t as far as the compiler is concerned because gcc has int32_t as long int
@@ -41,12 +45,16 @@ pico_sdk_init()
 add_subdirectory(libs)
 
 # Add executable. Default name is the project name, version 0.1
+add_library(lwipopts_provider INTERFACE)
+target_include_directories(lwipopts_provider INTERFACE ${CMAKE_CURRENT_LIST_DIR}/include)
 
 add_executable(PicoPan 
 ak8419.cpp
 tiff.cpp
 main.cpp
 camera.cpp
+stepper.cpp
+jpeg.cpp
 
 include/dhcpserver.c
 include/dnsserver.c )

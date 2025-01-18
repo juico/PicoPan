@@ -845,7 +845,12 @@ void rp2040_sdio_init(int clock_divider) {
   pio_sm_set_enabled(SDIO_PIO, SDIO_CMD_SM, false);
   pio_sm_set_enabled(SDIO_PIO, SDIO_DATA_SM, false);
   pio_sm_set_enabled(SDIO_PIO, SDIO_IRQ_SM, false);
-
+pio_gpio_init(SDIO_PIO,SDIO_CMD);
+pio_gpio_init(SDIO_PIO,SDIO_CLK);
+pio_gpio_init(SDIO_PIO,SDIO_D0);
+pio_gpio_init(SDIO_PIO,SDIO_D1);
+pio_gpio_init(SDIO_PIO,SDIO_D2);
+pio_gpio_init(SDIO_PIO,SDIO_D3);
   // Load PIO programs
   pio_clear_instruction_memory(SDIO_PIO);
 
@@ -906,9 +911,11 @@ void rp2040_sdio_init(int clock_divider) {
                                  (1 << SDIO_D0) | (1 << SDIO_D1) |
                                  (1 << SDIO_D2) | (1 << SDIO_D3);
 
+
+
   // Set pullups
   gpio_pull_up(SDIO_CMD);
-  //gpio_pull_down(SDIO_CLK);
+  gpio_pull_up(SDIO_CLK);
   gpio_pull_up(SDIO_D0);
   gpio_pull_up(SDIO_D1);
   gpio_pull_up(SDIO_D2);
@@ -925,19 +932,19 @@ void rp2040_sdio_init(int clock_divider) {
   // Redirect GPIOs to PIO
   gpio_set_function(SDIO_CMD, GPIO_FUNC_PIO1);
   gpio_set_function(SDIO_CLK, GPIO_FUNC_PIO1);
-  gpio_set_function(22, GPIO_FUNC_PIO1);
+  //gpio_set_function(22, GPIO_FUNC_PIO1);
   gpio_set_function(SDIO_D0, GPIO_FUNC_PIO1);
   gpio_set_function(SDIO_D1, GPIO_FUNC_PIO1);
   gpio_set_function(SDIO_D2, GPIO_FUNC_PIO1);
   gpio_set_function(SDIO_D3, GPIO_FUNC_PIO1);
 
   // Set Drive strength
-  //  gpio_set_drive_strength(SDIO_CMD,GPIO_DRIVE_STRENGTH_4MA);
-  //  gpio_set_drive_strength(SDIO_CLK,GPIO_DRIVE_STRENGTH_4MA);
-  //  gpio_set_drive_strength(SDIO_D0,GPIO_DRIVE_STRENGTH_4MA);
-  //  gpio_set_drive_strength(SDIO_D1,GPIO_DRIVE_STRENGTH_4MA);
-  //  gpio_set_drive_strength(SDIO_D2,GPIO_DRIVE_STRENGTH_4MA);
-  //  gpio_set_drive_strength(SDIO_D3,GPIO_DRIVE_STRENGTH_4MA);
+   gpio_set_drive_strength(SDIO_CMD,GPIO_DRIVE_STRENGTH_12MA);
+   gpio_set_drive_strength(SDIO_CLK,GPIO_DRIVE_STRENGTH_12MA);
+   gpio_set_drive_strength(SDIO_D0,GPIO_DRIVE_STRENGTH_12MA);
+   gpio_set_drive_strength(SDIO_D1,GPIO_DRIVE_STRENGTH_12MA);
+   gpio_set_drive_strength(SDIO_D2,GPIO_DRIVE_STRENGTH_12MA);
+   gpio_set_drive_strength(SDIO_D3,GPIO_DRIVE_STRENGTH_12MA);
 
   // Set up IRQ handler when DMA completes.
   irq_set_exclusive_handler(DMA_IRQ_1, rp2040_sdio_tx_irq);

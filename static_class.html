@@ -23,6 +23,8 @@
     this.gammaFactor = 0.5;
     this.pixel = null
     this.lastConnect=null;
+    this.jpegdata = ArrayBuffer();
+    this.jpegimage=null;
     window.onload = () => this.initialize();
   }
 
@@ -36,7 +38,8 @@
       this.focusContext = this.focusCanvas.getContext("2d");
       this.image = this.imageContext.createImageData(1, imageCanvas.height);
       this.connectionStateDiv= document.getElementById("connectionState");
-        this.pixel = this.image.data;
+      this.jpegimage=document.getElementById("imageJPEG");
+      this.pixel = this.image.data;
       this.setupWebSocket();
       this.setupControls();
     }
@@ -49,6 +52,7 @@
       { id: "btn_preview", command: 2 },
       { id: "btn_abort", command: 3 },
       { id: "btn_expose", command: 4 },
+      { id: "btn_jpeg", command: 5 },
     ];
 
     buttons.forEach(({ id, command }) => {
@@ -60,7 +64,7 @@
   }
 
   setupWebSocket() {
-    this.socket = new WebSocket("ws://192.168.4.1/");
+    this.socket = new WebSocket("ws://192.168.4.1:81/");
     this.socket.binaryType = "arraybuffer";
     this.socket.addEventListener("open", (event) => this.handleSocketOpen(event));
 
@@ -93,6 +97,9 @@
             break;
           case 3: // Histogram data
             this.handleHistogramData(event.data, offset, messageLength);
+            break;
+          case 4: //Handle jpeg data
+            this.handleJPEGData(event.data,offset,messageLength);
             break;
         }
 
@@ -135,7 +142,11 @@
       this.column = 0;
     }
   }
-
+  handleJPEGData(data,offset,length){
+    var tmp = Uint8Array(data.slice(offset,offset+length));
+    this.jpegdata = Uint8Array(...this.jpegdata,...tmp);
+    this.jpegimage.src="data:image/jpeg;base64,"+this.jpegdata.toBase64();
+  }
   handleFocusData(data, offset, length) {
     const focusDataArray = new Float32Array(data.slice(offset, offset + length));
     if (!this.initialFrame) {
@@ -254,6 +265,7 @@ new CanvasApp();
   <canvas id="histogramCanvas" width="512" height="300" style="border-style: dotted;border-width: 2px;">
 
   </canvas>
+  <img id="imageJPEG" />
   <div>
     
     <form id="command_form">
@@ -277,6 +289,7 @@ new CanvasApp();
       <input type="button" id="btn_preview" value="preview">
       <input type="button" id="btn_abort" value="abort">
       <input type="button" id="btn_expose" value="expose">
+      <input type="button" id="btn_jpeg" value="jpeg preview">
 
     </form>
   </div>
