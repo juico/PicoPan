@@ -4,7 +4,7 @@
 #include <math.h>
 #include "pico/util/queue.h"
 #include "camera.h"
-#define MSG_JPG 5
+#include "jpeg.h"
 
 /* Public Domain, Simple, Minimalistic JPEG writer - http://jonolick.com
  *
@@ -53,7 +53,7 @@ void init_gamma_table()
 }
 uint8_t jpegbuffer[8][1024 + 4] = {};
 uint8_t buffer_page = 0;
-uint8_t buffer_index = 4;
+uint32_t buffer_index = 4;
 static const unsigned char s_jo_ZigZag[] = {0, 1, 5, 6, 14, 15, 27, 28, 2, 4, 7, 13, 16, 26, 29, 42, 3, 8, 12, 17, 25, 30, 41, 43, 9, 11, 18, 24, 31, 40, 44, 53, 10, 19, 23, 32, 39, 45, 52, 54, 20, 22, 33, 38, 46, 51, 55, 60, 21, 34, 37, 47, 50, 56, 59, 61, 35, 36, 48, 49, 57, 58, 62, 63};
 static const unsigned char std_dc_luminance_nrcodes[] = {0, 0, 1, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0};
 static const unsigned char std_dc_luminance_values[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
@@ -95,12 +95,13 @@ void send_buff()
     uint16_t *msg_jpg_type = (uint16_t *)jpegbuffer[buffer_page];
     uint16_t *msg_jpeg_len = (uint16_t *)(jpegbuffer[buffer_page]+2);
     *msg_jpg_type = MSG_JPG;
-    *msg_jpeg_len = buffer_index + 4;
+    *msg_jpeg_len = buffer_index;
     struct web_data jpeg_data;
-    jpeg_data.length = buffer_index + 4;
+    jpeg_data.length = buffer_index;
     jpeg_data.buffer = jpegbuffer[buffer_page];
 
     queue_add_blocking(&dataqueue, &jpeg_data);
+    //printf("writing a block \n");
 }
 void putc_buff(uint8_t input)
 {
@@ -110,12 +111,13 @@ void putc_buff(uint8_t input)
     {
         send_buff();
         buffer_page++;
-        if (buffer_page == 0)
+        if (buffer_page == 8)
         {
             buffer_page = 0;
         }
         buffer_index = 4;
     }
+    //printf("writing a bit\n");
 }
 void close_buff()
 {
@@ -281,19 +283,13 @@ __attribute__((optimize("O3"))) static int jo_processDU(int &bitBuf, int &bitCnt
     return DU[0];
 }
 
-bool jo_write_jpg(const void *data, int width, int height, int comp, int quality)
+bool jo_write_jpg(int width, int height, int quality)
 {
     // Constants that don't pollute global namespace
 
     // if(!data || !filename || !width || !height || comp > 4 || comp < 1 || comp == 2) {
     //     return false;
     // }
-
-    //  fp = fopen("test.jpg", "wb");
-    //  if(!fp) {
-    //      return false;
-    //  }
-    // TODO create buffer to write jpg data
 
     quality = quality ? quality : 90;
     int subsample = 0;
@@ -326,6 +322,24 @@ bool jo_write_jpg(const void *data, int width, int height, int comp, int quality
     write_buff(YTable, sizeof(YTable));
     putc_buff(1);
     write_buff(UVTable, sizeof(UVTable));
+
+// Add Exif metadata for orientation
+static const unsigned char exifHeader[] = {
+    0xFF, 0xE1,                // APP1 marker
+    0x00, 0x1E,                // Length of Exif segment (30 bytes in total)
+    'E', 'x', 'i', 'f', 0x00, 0x00, // Exif identifier and padding
+    0x49, 0x49,                // TIFF header (little-endian format)
+    0x2A, 0x00,                // TIFF magic number
+    0x08, 0x00, 0x00, 0x00,    // Offset to IFD (Image File Directory)
+    0x01, 0x00,                // Number of directory entries
+    0x12, 0x01,                // Tag ID (Orientation)
+    0x03, 0x00,                // Data format (Short, 2 bytes)
+    0x01, 0x00, 0x00, 0x00,    // Number of components (1)
+    0x08, 0x00,                // Value (8 = Rotated 90° CCW)
+    0x00, 0x00                 // Padding to align data
+};
+write_buff(exifHeader, sizeof(exifHeader));
+
     const unsigned char head1[] = {0xFF, 0xC0, 0, 0x11, 8, (unsigned char)(height >> 8), (unsigned char)(height & 0xFF), (unsigned char)(width >> 8), (unsigned char)(width & 0xFF), 3, 1, (unsigned char)(subsample ? 0x22 : 0x11), 0, 2, 0x11, 1, 3, 0x11, 1, 0xFF, 0xC4, 0x01, 0xA2, 0};
     write_buff(head1, sizeof(head1));
     write_buff(std_dc_luminance_nrcodes + 1, sizeof(std_dc_luminance_nrcodes) - 1);
@@ -352,10 +366,11 @@ bool jo_write_jpg(const void *data, int width, int height, int comp, int quality
 }
 __attribute__((optimize("O2"))) bool process_block_line(uint8_t *image_data, int width)
 {
-    // for(int y = 0; y < height; y += 8) {
+    //printf("Processing Blockline\n");
+
     for (int x = 0; x < width; x += 8)
     {
-        uint64_t yuvstart = time_us_64();
+        
         // float Y[64], U[64], V[64];
         float YUV[3][64];
         for (int row = 0, pos = 0; row < 8; ++row)
@@ -372,28 +387,37 @@ __attribute__((optimize("O2"))) bool process_block_line(uint8_t *image_data, int
                 YUV[2][pos] = +0.50000f * r - 0.41869f * g - 0.08131f * b;
             }
         }
-        YUVtime = YUVtime + (time_us_64() - yuvstart);
-
-        // for(int row = 0, pos = 0; row < 8; ++row) {
-        //     for(int col = x; col < x+8; ++col, ++pos) {
-        //         int p = 3*(row*width + col);
-
-        //     //    int16_t   r = gamma_table[image_data[p]] , g = gamma_table[image_data[p+1]], b = gamma_table[image_data[p+2]];
-        //         //float   r = 128.0f , g = 128.0f, b = 128.0f;
-        //         //printf("position: %d\n",p);
-        //         //Y[pos] = ((76*R + 151*G + 29*B) >>8)-128;
-        //         // U[pos] = ((-43*R - 85*G + 128*B) >>8 )  ;
-        //         // V[pos] = ((128*R - 107*G - 21*B) >>8 )  ;
-        //         YUV[0][pos]=YUV_int[0][pos];
-        //         YUV[1][pos]=YUV_int[1][pos] ;
-        //         YUV[2][pos]=YUV_int[2][pos];
-        //     }
-        // }
         DCY = jo_processDU(bitBuf, bitCnt, YUV[0], 8, fdtbl_Y, DCY, YDC_HT, YAC_HT);
         DCU = jo_processDU(bitBuf, bitCnt, YUV[1], 8, fdtbl_UV, DCU, UVDC_HT, UVAC_HT);
         DCV = jo_processDU(bitBuf, bitCnt, YUV[2], 8, fdtbl_UV, DCV, UVDC_HT, UVAC_HT);
     }
-    //}
+    return true;
+}
+__attribute__((optimize("O2"))) bool process_block(uint8_t *image_data, int width,int x)
+{
+    //printf("Processing Blockline\n");
+
+ 
+        // float Y[64], U[64], V[64];
+        float YUV[3][64];
+        for (int row = 0, pos = 0; row < 8; ++row)
+        {
+            for (int col = x; col < x + 8; ++col, ++pos)
+            {
+                int p = 3 * (row * width + col);
+
+                float r = gamma_table[image_data[p]], g = gamma_table[image_data[p + 1]], b = gamma_table[image_data[p + 2]];
+                // float   r = 128.0f , g = 128.0f, b = 128.0f;
+                // printf("position: %d\n",p);
+                YUV[0][pos] = +0.29900f * r + 0.58700f * g + 0.11400f * b - 128.0;
+                YUV[1][pos] = -0.16874f * r - 0.33126f * g + 0.50000f * b;
+                YUV[2][pos] = +0.50000f * r - 0.41869f * g - 0.08131f * b;
+            }
+        }
+        DCY = jo_processDU(bitBuf, bitCnt, YUV[0], 8, fdtbl_Y, DCY, YDC_HT, YAC_HT);
+        DCU = jo_processDU(bitBuf, bitCnt, YUV[1], 8, fdtbl_UV, DCU, UVDC_HT, UVAC_HT);
+        DCV = jo_processDU(bitBuf, bitCnt, YUV[2], 8, fdtbl_UV, DCV, UVDC_HT, UVAC_HT);
+    
     return true;
 }
 bool jo_write_jpg_end()

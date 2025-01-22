@@ -113,6 +113,6 @@ void stepper_init()
     irq_set_enabled(PWM_DEFAULT_IRQ_NUM(), true);
 
     stepper.stepper_pwm_config = pwm_get_default_config();
-    pwm_config_set_clkdiv_int_frac(&(stepper.stepper_pwm_config), 150,0);//Run pwm at 1MHz
+    pwm_config_set_clkdiv_int_frac(&(stepper.stepper_pwm_config), CLOCK_SPEED/1000000,0);//Run pwm at 1MHz
     pwm_init(stepper.stepper_slice, &(stepper.stepper_pwm_config), false);
 }

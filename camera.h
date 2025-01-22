@@ -5,6 +5,14 @@
 #define COMMAND_ABORT 3
 #define COMMAND_EXPOSE 4
 #define COMMAND_IDLE 5
+#define MSG_HEADER_LEN 4
+#define HISTOGRAM_LENGTH 3 * 2 * 128
+#define MSG_PREVIEW 1;
+#define MSG_FOCUS 2;
+#define MSG_HISTOGRAM 3;
+#define MSG_TEXT 4;
+#define MSG_JPG 5
+
 struct __attribute__((packed)) web_command {
   uint8_t command;     // command
   uint16_t exp_time;   // integration time in micro seconds
@@ -21,3 +29,5 @@ struct web_data{
   uint8_t* buffer;
 };
 void camera_task();
+
+void add_line_to_preview();

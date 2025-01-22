@@ -915,7 +915,7 @@ pio_gpio_init(SDIO_PIO,SDIO_D3);
 
   // Set pullups
   gpio_pull_up(SDIO_CMD);
-  gpio_pull_up(SDIO_CLK);
+  //gpio_pull_up(SDIO_CLK);
   gpio_pull_up(SDIO_D0);
   gpio_pull_up(SDIO_D1);
   gpio_pull_up(SDIO_D2);
@@ -939,12 +939,12 @@ pio_gpio_init(SDIO_PIO,SDIO_D3);
   gpio_set_function(SDIO_D3, GPIO_FUNC_PIO1);
 
   // Set Drive strength
-   gpio_set_drive_strength(SDIO_CMD,GPIO_DRIVE_STRENGTH_12MA);
-   gpio_set_drive_strength(SDIO_CLK,GPIO_DRIVE_STRENGTH_12MA);
-   gpio_set_drive_strength(SDIO_D0,GPIO_DRIVE_STRENGTH_12MA);
-   gpio_set_drive_strength(SDIO_D1,GPIO_DRIVE_STRENGTH_12MA);
-   gpio_set_drive_strength(SDIO_D2,GPIO_DRIVE_STRENGTH_12MA);
-   gpio_set_drive_strength(SDIO_D3,GPIO_DRIVE_STRENGTH_12MA);
+  //  gpio_set_drive_strength(SDIO_CMD,GPIO_DRIVE_STRENGTH_12MA);
+  //  gpio_set_drive_strength(SDIO_CLK,GPIO_DRIVE_STRENGTH_12MA);
+  //  gpio_set_drive_strength(SDIO_D0,GPIO_DRIVE_STRENGTH_12MA);
+  //  gpio_set_drive_strength(SDIO_D1,GPIO_DRIVE_STRENGTH_12MA);
+  //  gpio_set_drive_strength(SDIO_D2,GPIO_DRIVE_STRENGTH_12MA);
+  //  gpio_set_drive_strength(SDIO_D3,GPIO_DRIVE_STRENGTH_12MA);
 
   // Set up IRQ handler when DMA completes.
   irq_set_exclusive_handler(DMA_IRQ_1, rp2040_sdio_tx_irq);

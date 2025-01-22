@@ -88,7 +88,7 @@ set_sys_clock_khz(CLOCK_SPEED/1000,true);
 queue_init(&commandqueue,sizeof(web_command), 4);
 queue_init(&dataqueue,sizeof(web_data),4);
   stdio_init_all();
-  sleep_ms(1000);
+  sleep_ms(10000);
   //   if (sd_init()) {
   //   printf("SD card mounted");
   // }

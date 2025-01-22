@@ -11,14 +11,9 @@
 #include "tiff.h"
 #include <cstdlib>
 #include <cstring>
-#define MSG_HEADER_LEN 4
-#define HISTOGRAM_LENGTH 3 * 2 * 128
-#define MSG_PREVIEW 1;
-#define MSG_FOCUS 2;
-#define MSG_HISTOGRAM 3;
-#define MSG_TEXT 4;
-
-uint32_t lines_remaining = 0;
+#include "jpeg.h"
+#define PIXELS_PREVIEW 672
+int lines_remaining = 0;
 uint8_t gain_red = 0, gain_green = 0, gain_blue = 0;
 extern int buffer_num;
 extern bool data_ready;
@@ -33,13 +28,11 @@ uint slice_num, channel;
 uint64_t step_time_start;
 int8_t camera_state = -1;
 
-uint8_t msg_preview[8][MSG_HEADER_LEN + 3 * 5400 / 8] = {};
-uint8_t *preview_buffer[8] = {};
-uint16_t *msg_preview_type[8] = {};
-uint16_t *msg_preview_len[8] = {};
+uint8_t preview_buffer[16 * (3 * PIXELS_PREVIEW)] = {};
+
 uint8_t msg_focus[MSG_HEADER_LEN + 8 * 4] = {};
 uint8_t msg_histogram[MSG_HEADER_LEN + HISTOGRAM_LENGTH] = {};
-uint preview_frame=0;
+uint preview_frame = 0;
 void auto_offset()
 {
   set_offset(128, 128, 128);
@@ -133,20 +126,12 @@ void camera_task()
   sleep_ms(1000);
   printf("Second core started\n");
   // task that controlls camera and takes commands from other core
-  // if(sd_init()){
-  //     printf("SD card mounted");
-  // }
+  if(sd_init()){
+      printf("SD card mounted");
+  }
   ccd_init();
   stepper_init();
-  for (int i = 0; i < 8; i++)
-  {
-    preview_buffer[i] = msg_preview[i] + MSG_HEADER_LEN;
-    msg_preview_type[i] = (uint16_t *)msg_preview[i];
-    msg_preview_len[i] = (uint16_t *)(msg_preview[i] + 2);
-    *(msg_preview_type[i]) = MSG_PREVIEW;
-    *(msg_preview_len[i]) = sizeof(msg_preview);
-  }
-
+  init_gamma_table();
   float *focus_data = (float *)(msg_focus + MSG_HEADER_LEN);
   uint16_t *msg_focus_type = (uint16_t *)msg_focus;
   uint16_t *msg_focus_len = (uint16_t *)(msg_focus + 2);
@@ -161,7 +146,6 @@ void camera_task()
 
   uint16_t *pixelbuffer;
   struct web_command command;
-  int bin_step = 0;
   int pixels_per_line = 5400;
   int real_pixels = 4864;
   int start_pixels = 272;
@@ -181,46 +165,25 @@ void camera_task()
       {
         if (data_ready)
         {
-          // printf("Lines remaining:%d\n", lines_remaining);
-          //  only send out 1/8 of the lines and 1/8 of the pixels per line
-          //  if (++bin_step == 8)
-          //{
-          for (int i = 0; i < pixels_per_line / 8; i++)
+          add_line_to_preview();
+          if (preview_frame % 8 == 0)
           {
-            // only extract the MSB and copy it to the preview buffer
-            preview_buffer[preview_frame][3 * i] = pixel_buffers[buffer_num ^ 1][(i * 8) * 6];
-            preview_buffer[preview_frame][3 * i + 1] =
-                pixel_buffers[buffer_num ^ 1][(i * 8) * 6 + 2];
-            preview_buffer[preview_frame][3 * i + 2] =
-                pixel_buffers[buffer_num ^ 1][(i * 8) * 6 + 4];
+            uint8_t* preview_block = preview_buffer + ((preview_frame-8) * 3 * PIXELS_PREVIEW);
+            //printf("writing block\n");
+            int extra_lines=0;
+            if(preview_frame>=16){
+              preview_frame=0;
+            }
+            for (int x = 0; x < PIXELS_PREVIEW; x += 8)
+            {
+              process_block(preview_block, PIXELS_PREVIEW, x);
+              if(data_ready){
+                add_line_to_preview();
+                extra_lines++;
+              }
+            }
+            //printf("extra lines captured%d\n",extra_lines);
           }
-          // printf("messagelen: %d,type:%d\n", *msg_preview_len,*msg_preview_type);
-          // if(((preview_frame+1)%4)==0){
-          struct web_data preview_data;
-          preview_data.length = sizeof(msg_preview[preview_frame]);
-          preview_data.buffer = msg_preview[preview_frame];
-
-          queue_add_blocking(&dataqueue, &preview_data);
-          // }
-
-          preview_frame=(preview_frame+1)%8;
-          // printf("preview pushed on queue");
-          //  multicore_fifo_push_blocking((uint32_t)msg_preview);
-          bin_step = 0;
-          // printf("sending line to other core");
-          //}
-          // sleep_ms(30);
-          write_ready = true;
-          data_ready = false;
-          // lines_remaining=lines_remaining-8;
-          lines_remaining--;
-          lines_remaining--;
-          lines_remaining--;
-          lines_remaining--;
-          lines_remaining--;
-          lines_remaining--;
-          lines_remaining--;
-          lines_remaining--;
         }
       }
       else
@@ -228,11 +191,9 @@ void camera_task()
         camera_state = COMMAND_IDLE;
         lines_remaining = 0;
         ccd_stop_capture();
+        jo_write_jpg_end();
         move_to(0, 40000.0, 200000.0);
-        // free(pixel_buffers[0]);
-        // free(pixel_buffers[1]);
         printf("Klaar met preview");
-        // free(preview_buffer);
       }
       break;
     case COMMAND_CAPTURE:
@@ -250,17 +211,13 @@ void camera_task()
       }
       else
       {
-        tiff_close();
+        
         camera_state = COMMAND_IDLE;
         lines_remaining = 0;
+        tiff_close();
         ccd_stop_capture();
         move_to(0, 40000.0, 200000.0);
-
         printf("klaar met schrijven");
-
-        // free(pixel_buffers[0]);
-        // free(pixel_buffers[1]);
-        // free(preview_buffer);
       }
       break;
 
@@ -339,8 +296,6 @@ void camera_task()
       // memcpy(&command, (void *)multicore_fifo_pop_blocking(), 16);
       queue_remove_blocking(&commandqueue, &command);
 
-      lines_remaining = command.lines;
-      set_exposure_time(command.exp_time);
       // set_gain(command.gain);
       switch (command.command)
       {
@@ -356,19 +311,22 @@ void camera_task()
 
         break;
       case COMMAND_CAPTURE:
-        // set_exposure_time(command.exp_time);
-        // set_gain(command.gain);
-if(tiff_create(command.lines, real_pixels)){
-        move_to(steps_per_line * command.exp_time * command.lines, steps_per_line * command.exp_time, 200000.0);
-        ccd_start_capture();
+        lines_remaining = command.lines;
+        set_exposure_time(command.exp_time);
+        set_gain(command.gain, command.gain, command.gain);
+        if (tiff_create(command.lines, real_pixels))
+        {
+          move_to(steps_per_line * command.exp_time * command.lines, steps_per_line * command.exp_time, 200000.0);
+          ccd_start_capture();
 
-        camera_state = COMMAND_CAPTURE;
-}
-else{
-  printf("Error creating tiff file aborting");
-  camera_state = COMMAND_IDLE;
-}
-        
+          camera_state = COMMAND_CAPTURE;
+        }
+        else
+        {
+          printf("Error creating tiff file aborting");
+          camera_state = COMMAND_IDLE;
+        }
+
         // auto_offset();
         // run_stepper(steps_per_line * command.exp_time);
 
@@ -376,9 +334,13 @@ else{
 
         break;
       case COMMAND_PREVIEW:
-
+        preview_frame = 0;
+        lines_remaining = command.lines / 8;
+        set_exposure_time(command.exp_time);
+        set_gain(command.gain, command.gain, command.gain);
         // data_ready=true;//for debugginh
         camera_state = COMMAND_PREVIEW;
+        jo_write_jpg(PIXELS_PREVIEW, command.lines / 8, 80);
         // auto_offset();
         //  set_gain(command.gain,command.gain,command.gain);
         // run_stepper(8 * steps_per_line * command.exp_time);
@@ -388,11 +350,17 @@ else{
         printf("starting preview.");
         break;
       case COMMAND_EXPOSE:
+        lines_remaining = command.lines;
+        set_exposure_time(command.exp_time);
+        set_gain(command.gain, command.gain, command.gain);
         camera_state = COMMAND_EXPOSE;
         ccd_start_capture();
 
         break;
       case COMMAND_FOCUS:
+        lines_remaining = command.lines;
+        set_exposure_time(command.exp_time);
+        set_gain(command.gain, command.gain, command.gain);
         camera_state = COMMAND_FOCUS;
         ccd_start_capture();
 
@@ -402,4 +370,26 @@ else{
       }
     }
   }
+}
+
+void add_line_to_preview()
+{
+  if(preview_frame>=16){
+    preview_frame=0;
+  }
+  for (int i = 0; i < PIXELS_PREVIEW; i++)
+  {
+    // only extract the MSB and copy it to the preview buffer
+    preview_buffer[(preview_frame * PIXELS_PREVIEW + i) * 3] = pixel_buffers[buffer_num ^ 1][(i * 8) * 6];
+    preview_buffer[(preview_frame * PIXELS_PREVIEW + i) * 3 + 1] =
+        pixel_buffers[buffer_num ^ 1][(i * 8) * 6 + 2];
+    preview_buffer[(preview_frame * PIXELS_PREVIEW + i) * 3 + 2] =
+        pixel_buffers[buffer_num ^ 1][(i * 8) * 6 + 4];
+  }
+  preview_frame++;
+
+  write_ready = true;
+  data_ready = false;
+  lines_remaining--;
+  //printf("Lines remaing:%d\n",lines_remaining);
 }

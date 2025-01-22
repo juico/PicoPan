@@ -20,7 +20,7 @@ using namespace std;
 
 #define CCD_PIXELS 16384
 #define CCD_BYTES CCD_PIXELS * 2
-#define CLOCK_SPEED 150000000
+#define CLOCK_SPEED 250000000
 
 struct __attribute__((__packed__)) ak8419_config {
   bool power_down : 1;

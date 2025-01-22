@@ -23,26 +23,20 @@
     this.gammaFactor = 0.5;
     this.pixel = null
     this.lastConnect=null;
-    this.jpegdata = ArrayBuffer();
+    this.jpegdata = new  Uint8Array();
     this.jpegimage=null;
     window.onload = () => this.initialize();
   }
 
   initialize() {
-    this.imageCanvas = document.getElementById("imageCanvas");
-    if (this.imageCanvas && this.imageCanvas.getContext("2d")) {
-      this.imageContext = this.imageCanvas.getContext("2d");
       this.histogramCanvas = document.getElementById("histogramCanvas");
       this.histogramContext = this.histogramCanvas.getContext("2d");
       this.focusCanvas = document.getElementById("focusCanvas");
       this.focusContext = this.focusCanvas.getContext("2d");
-      this.image = this.imageContext.createImageData(1, imageCanvas.height);
       this.connectionStateDiv= document.getElementById("connectionState");
       this.jpegimage=document.getElementById("imageJPEG");
-      this.pixel = this.image.data;
       this.setupWebSocket();
       this.setupControls();
-    }
   }
 
   setupControls() {
@@ -98,7 +92,7 @@
           case 3: // Histogram data
             this.handleHistogramData(event.data, offset, messageLength);
             break;
-          case 4: //Handle jpeg data
+          case 5: //Handle jpeg data
             this.handleJPEGData(event.data,offset,messageLength);
             break;
         }
@@ -143,9 +137,14 @@
     }
   }
   handleJPEGData(data,offset,length){
-    var tmp = Uint8Array(data.slice(offset,offset+length));
-    this.jpegdata = Uint8Array(...this.jpegdata,...tmp);
-    this.jpegimage.src="data:image/jpeg;base64,"+this.jpegdata.toBase64();
+    var tmp = new Uint8Array(data.slice(offset,offset+length));
+
+      this.jpegdata = new Uint8Array([...this.jpegdata,...tmp]);
+    
+    this.jpegimage.src=URL.createObjectURL(
+  new Blob([this.jpegdata.buffer], { type: 'image/jpeg' } /* (1) */)
+);
+
   }
   handleFocusData(data, offset, length) {
     const focusDataArray = new Float32Array(data.slice(offset, offset + length));
@@ -231,9 +230,11 @@
     const commandView = new DataView(commandBuffer);
     const cmdForm = document.getElementById("command_form");
 
-    this.imageCanvas.width = Math.floor(cmdForm.lines.value / 8);
-    this.column = 0;
-
+    // this.imageCanvas.width = Math.floor(cmdForm.lines.value / 8);
+    // this.column = 0;
+    if(command == 2){
+      this.jpegdata=new Uint8Array();
+    }
     commandView.setUint16(0, 1337, true);
     commandView.setUint8(2, command);
     commandView.setUint16(3, cmdForm.exp_time.value, true);
@@ -258,14 +259,14 @@ new CanvasApp();
 
 <body>
     <div id="connectionState" ></div>
-  <canvas id="imageCanvas" width="800" height="1000" style="border-style: dotted;border-width: 2px;">
+      <img id="imageJPEG" />
 
-  </canvas>
-  <canvas id="focusCanvas" width="500" height="700" style="border-style: dotted;border-width: 2px;"></canvas>
-  <canvas id="histogramCanvas" width="512" height="300" style="border-style: dotted;border-width: 2px;">
+    <div>
+      <canvas  id="focusCanvas" width="500" height="700" style="border-style: dotted;border-width: 2px;"></canvas>
+      <canvas  id="histogramCanvas" width="512" height="300" style="border-style: dotted;border-width: 2px;"></canvas>
+      
+    </div>
 
-  </canvas>
-  <img id="imageJPEG" />
   <div>
     
     <form id="command_form">
