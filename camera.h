@@ -15,7 +15,7 @@
 
 struct __attribute__((packed)) web_command {
   uint8_t command;     // command
-  uint16_t exp_time;   // integration time in micro seconds
+  uint16_t exp_time;   // integration time fraction of second
   uint8_t resolution;  // resolution setting
   uint8_t gain;        // uniform gain
   uint32_t lines;      // amount of lines to capture

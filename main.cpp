@@ -88,12 +88,12 @@ set_sys_clock_khz(CLOCK_SPEED/1000,true);
 queue_init(&commandqueue,sizeof(web_command), 4);
 queue_init(&dataqueue,sizeof(web_data),4);
   stdio_init_all();
-  sleep_ms(10000);
-  //   if (sd_init()) {
-  //   printf("SD card mounted");
-  // }
+  //sleep_ms(10000);
+    if (sd_init()) {
+    printf("SD card mounted");
+  }
     multicore_launch_core1(camera_task);
-sleep_ms(1000);
+//sleep_ms(1000);
     if (cyw43_arch_init() != 0) {
     printf("cyw43_arch_init failed\n");
     while (1)

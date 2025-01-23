@@ -37,33 +37,30 @@ void auto_offset()
 {
   set_offset(128, 128, 128);
   set_gain(0, 0, 0);
-  // data_ready=false;
+  //data_ready=false;
   avg_sum_dark_red = 0;
   avg_sum_dark_green = 0;
   avg_sum_dark_blue = 0;
-  avg_sum_wb_red = 0;
-  avg_sum_wb_green = 0;
-  avg_sum_wb_blue = 0;
   ccd_start_capture();
 
   // Wait for data to be ready
-  for (int i = 0; i < 4; ++i)
+  for (int i = 0; i < 8; ++i)
   {
     while (!data_ready)
     {
-      sleep_ms(10);
+      sleep_ms(1);
     }
     printf("line %d ready\n", i);
     data_ready = false;
+    write_ready=true;
   }
 
   ccd_stop_capture();
-  printf("\n value at 128: %u\n",
-         (pixel_buffers[buffer_num ^ 1][128 * 6] << 8) +
-             pixel_buffers[buffer_num ^ 1][128 * 6 + 1]);
-  for (int j = 127; j < 256; j++)
+  int dark_pixel_start=336;
+  int dark_pixel_end=376;
+  int dark_pixel_num = dark_pixel_end-dark_pixel_start;
+  for (int j = dark_pixel_start; j < dark_pixel_end; j++)
   {
-    // avg_sum0= avg_sum0 + ((uint16_t*) (pixel_buffers[buffer_num^1]))[j*3];
     avg_sum_dark_red = avg_sum_dark_red +
                        (pixel_buffers[buffer_num ^ 1][j * 6] << 8) +
                        pixel_buffers[buffer_num ^ 1][j * 6 + 1];
@@ -75,42 +72,11 @@ void auto_offset()
                         (pixel_buffers[buffer_num ^ 1][j * 6 + 4] << 8) +
                         pixel_buffers[buffer_num ^ 1][j * 6 + 5];
   }
-  avg_sum_dark_red = avg_sum_dark_red >> 7;
-  avg_sum_dark_green = avg_sum_dark_green >> 7;
-  avg_sum_dark_blue = avg_sum_dark_blue >> 7;
-  printf("avg R: %u, G: %u,B: %u \n", (avg_sum_dark_red), (avg_sum_dark_green),
-         (avg_sum_dark_blue));
+  avg_sum_dark_red = avg_sum_dark_red/dark_pixel_num;
+  avg_sum_dark_green = avg_sum_dark_green/dark_pixel_num;
+  avg_sum_dark_blue = avg_sum_dark_blue/dark_pixel_num;
 
-  for (int j = 511; j < 4608; j++)
-  {
-    avg_sum_wb_red = avg_sum_wb_red +
-                     (pixel_buffers[buffer_num ^ 1][j * 6] << 8) +
-                     pixel_buffers[buffer_num ^ 1][j * 6 + 1];
-    avg_sum_wb_green = avg_sum_wb_green +
-                       (pixel_buffers[buffer_num ^ 1][j * 6 + 2] << 8) +
-                       pixel_buffers[buffer_num ^ 1][j * 6 + 3];
-    avg_sum_wb_blue = avg_sum_wb_blue +
-                      (pixel_buffers[buffer_num ^ 1][j * 6 + 4] << 8) +
-                      pixel_buffers[buffer_num ^ 1][j * 6 + 5];
-  }
-  printf("avg R: %u, G: %u,B: %u \n", avg_sum_wb_red >> 12,
-         avg_sum_wb_green >> 12, avg_sum_wb_blue >> 12);
 
-  // check if red channel is brightest?
-  double gain_green_correction =
-      ((double)(avg_sum_wb_red >> 12) - avg_sum_dark_red) /
-      ((double)(avg_sum_wb_green >> 12) - avg_sum_dark_green);
-  double gain_blue_correction =
-      ((double)(avg_sum_wb_red >> 12) - avg_sum_dark_red) /
-      ((double)(avg_sum_wb_blue >> 12) - avg_sum_dark_blue);
-  gain_green = 9 * (-122008 + 121875 * gain_green_correction) /
-               (15251 + 12500 * gain_green_correction);
-  gain_blue = 9 * (-122008 + 121875 * gain_blue_correction) /
-              (15251 + 12500 * gain_blue_correction);
-  gain_red = 0;
-
-  printf("gain setting R: %u, G: %u,B: %u \n", gain_red, gain_green, gain_blue);
-  set_gain(gain_red, gain_green, gain_blue);
   set_offset(128 - (avg_sum_dark_red) / 56, 128 - (avg_sum_dark_green) / 56,
              128 - (avg_sum_dark_blue) / 56);
 }
@@ -126,9 +92,9 @@ void camera_task()
   sleep_ms(1000);
   printf("Second core started\n");
   // task that controlls camera and takes commands from other core
-  if(sd_init()){
-      printf("SD card mounted");
-  }
+  // if(sd_init()){
+  //     printf("SD card mounted");
+  // }
   ccd_init();
   stepper_init();
   init_gamma_table();
@@ -313,10 +279,11 @@ void camera_task()
       case COMMAND_CAPTURE:
         lines_remaining = command.lines;
         set_exposure_time(command.exp_time);
+        auto_offset();
         set_gain(command.gain, command.gain, command.gain);
         if (tiff_create(command.lines, real_pixels))
         {
-          move_to(steps_per_line * command.exp_time * command.lines, steps_per_line * command.exp_time, 200000.0);
+          move_to((command.steps_line * command.exp_time)/100 * command.lines, (command.steps_line * command.exp_time)/100, 200000.0);
           ccd_start_capture();
 
           camera_state = COMMAND_CAPTURE;
@@ -337,14 +304,12 @@ void camera_task()
         preview_frame = 0;
         lines_remaining = command.lines / 8;
         set_exposure_time(command.exp_time);
+        auto_offset();
         set_gain(command.gain, command.gain, command.gain);
-        // data_ready=true;//for debugginh
         camera_state = COMMAND_PREVIEW;
         jo_write_jpg(PIXELS_PREVIEW, command.lines / 8, 80);
-        // auto_offset();
-        //  set_gain(command.gain,command.gain,command.gain);
-        // run_stepper(8 * steps_per_line * command.exp_time);
-        move_to(steps_per_line * command.exp_time * command.lines, 8 * steps_per_line * command.exp_time, 200000.0);
+
+        move_to((command.steps_line * command.exp_time)/100 * command.lines, 8 * (command.steps_line * command.exp_time)/100, 200000.0);
 
         ccd_start_capture();
         printf("starting preview.");
@@ -352,6 +317,7 @@ void camera_task()
       case COMMAND_EXPOSE:
         lines_remaining = command.lines;
         set_exposure_time(command.exp_time);
+        auto_offset();
         set_gain(command.gain, command.gain, command.gain);
         camera_state = COMMAND_EXPOSE;
         ccd_start_capture();
@@ -360,6 +326,7 @@ void camera_task()
       case COMMAND_FOCUS:
         lines_remaining = command.lines;
         set_exposure_time(command.exp_time);
+        auto_offset();
         set_gain(command.gain, command.gain, command.gain);
         camera_state = COMMAND_FOCUS;
         ccd_start_capture();
