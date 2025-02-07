@@ -1,6 +1,45 @@
 <html>
 
 <head>
+  <style>
+    /* Container for the image, line, and box */
+    .image-container {
+            position: relative;
+            display: inline-block;
+            border: 1px solid black;
+        }
+
+        /* Style for the vertical line */
+        .vertical-line {
+            position: absolute;
+            top: 0;
+            width: 2px;
+            height: 100%;
+            background-color: rgba(255, 0, 0, 0.6);
+            display: none; /* Initially hidden */
+        }
+
+        /* Style for the box */
+        .plot-box {
+            position: absolute;
+            top: 0;
+            left: 0;
+            /* width: 100px; */
+            height: 100%;
+            border: 1px;
+            border-color:  black;
+            border-style: solid;
+            background-color: rgba(255, 255, 255, 0.6);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            display: none; /* Initially hidden */
+        }
+
+
+  </style>
   <script>
     class CanvasApp {
   constructor() {
@@ -25,6 +64,8 @@
     this.lastConnect=null;
     this.jpegdata = new  Uint8Array();
     this.jpegimage=null;
+    this.verticalLine=null;
+    this.plotBox=null;
     window.onload = () => this.initialize();
   }
 
@@ -35,8 +76,42 @@
       this.focusContext = this.focusCanvas.getContext("2d");
       this.connectionStateDiv= document.getElementById("connectionState");
       this.jpegimage=document.getElementById("imageJPEG");
+      this.verticalLine = document.getElementById('verticalLine');
+      this.plotBox = document.getElementById('plotBox');
+      this.imageContainer = document.getElementById('imageContainer');
+
+
       this.setupWebSocket();
       this.setupControls();
+      // Add a click event listener to the image
+      ;
+      this.imageContainer.addEventListener('click', (function(event) {
+
+
+             // Get the bounding rectangle of the image
+             const rect = this.jpegimage.getBoundingClientRect();
+
+// Calculate the coordinates relative to the image
+const x = event.clientX - rect.left;            
+// Position the vertical line at the clicked x coordinate
+this.verticalLine.style.left = `${x}px`;
+this.verticalLine.style.display = 'block'; // Make the line visible
+
+// Position the info box 50 pixels to the right of the line
+const boxOffset = 50; // Distance from the line
+const boxWidth = 100; // Width of the info box
+const imageWidth = rect.width; // Width of the image
+
+// Calculate the box's left position
+let boxLeft = x + boxOffset;
+
+
+this.plotBox.style.left = `${boxLeft}px`;
+this.plotBox.style.display = 'block'; // Make the box visible
+this.moveStepper(8*x);
+
+
+}).bind(this));
   }
 
   setupControls() {
@@ -178,7 +253,7 @@
       this.focusScale = this.focusCanvas.width / Math.max(...focusData);
     }
 
-    focusData.forEach((value, i) => {
+    focusData.reverse().forEach((value, i) => {
       this.focusContext.fillStyle = "#ff0000";
       this.focusContext.fillRect(0, barWidth * i, this.focusMax[i] * this.focusScale, barWidth);
       this.focusContext.fillStyle = "#00ff00";
@@ -232,15 +307,50 @@
 
     // this.imageCanvas.width = Math.floor(cmdForm.lines.value / 8);
     // this.column = 0;
-    if(command == 2){
+    if(command == 2){ //clear image when starting new preview
       this.jpegdata=new Uint8Array();
+      this.verticalLine.style.display = 'none'; // Make the line visible
+      this.focusCanvas.style.display='none';
+      this.histogramCanvas.style.display='none';
+      this.plotBox.style.display = 'none';
     }
+    if(command == 2){//show focus plot when focus command is send
+      this.focusCanvas.style.display='block';
+      this.histogramCanvas.style.display='none';
+    }
+    if(command == 3){//show histogram plot when histogram command is send
+      this.focusCanvas.style.display='none';
+      this.histogramCanvas.style.display='block';
+    }
+    
     commandView.setUint16(0, 1337, true);
     commandView.setUint8(2, command);
     commandView.setUint16(3, cmdForm.exp_time.value, true);
     commandView.setUint8(5, cmdForm.resolution.value);
     commandView.setUint8(6, cmdForm.gain.value);
     commandView.setUint32(7, cmdForm.lines.value, true);
+    commandView.setUint16(11, cmdForm.steps_line.value, true);
+    commandView.setUint16(13, cmdForm.crop_start.value, true);
+    commandView.setUint16(15, cmdForm.crop_end.value, true);
+    commandView.setUint8(17, cmdForm.preview_avg.value);
+
+    this.socket.send(commandView.buffer);
+  }
+  moveStepper(position){
+
+    const commandBuffer = new ArrayBuffer(18);
+    const commandView = new DataView(commandBuffer);
+    const cmdForm = document.getElementById("command_form");
+
+    // this.imageCanvas.width = Math.floor(cmdForm.lines.value / 8);
+    // this.column = 0;
+
+    commandView.setUint16(0, 1337, true);
+    commandView.setUint8(2, 6);
+    commandView.setUint16(3, cmdForm.exp_time.value, true);
+    commandView.setUint8(5, cmdForm.resolution.value);
+    commandView.setUint8(6, cmdForm.gain.value);
+    commandView.setUint32(7, position, true);
     commandView.setUint16(11, cmdForm.steps_line.value, true);
     commandView.setUint16(13, cmdForm.crop_start.value, true);
     commandView.setUint16(15, cmdForm.crop_end.value, true);
@@ -259,12 +369,17 @@ new CanvasApp();
 
 <body>
     <div id="connectionState" ></div>
-      <img id="imageJPEG" />
+    <div id="imageContainer" class="image-container">
+      <img id="imageJPEG" src="https://placehold.co/600x400/EEE/31343C"/>
+              <!-- Vertical line -->
+              <div id="verticalLine" class="vertical-line"></div>
+              <div id="plotBox" class="plot-box">
+                <canvas  id="focusCanvas" width="500" height="700" style="border-style: dotted;border-width: 2px;"></canvas>
+                <canvas  id="histogramCanvas" width="512" height="300" style="border-style: dotted;border-width: 2px;"></canvas>
+                <!-- <canvas  id="focusCanvas" width="500" height="100%" style="border-style: dotted;border-width: 2px;"></canvas>
+                <canvas  id="histogramCanvas" width="512" height="100%" style="border-style: dotted;border-width: 2px;"></canvas> -->
+              </div>
 
-    <div>
-      <canvas  id="focusCanvas" width="500" height="700" style="border-style: dotted;border-width: 2px;"></canvas>
-      <canvas  id="histogramCanvas" width="512" height="300" style="border-style: dotted;border-width: 2px;"></canvas>
-      
     </div>
 
   <div>
@@ -279,7 +394,7 @@ new CanvasApp();
       <br>
       <label for="gain">Gain:</label><input value="0" name="gain" type="number"><br>
       <label for="lines">Lines:</label><input name="lines" type="number"><br>
-      <label for="steps_line">Steps per 100 lines:</label><input value="4080" name="steps_line" type="number"><br>
+      <label for="steps_line">Steps per 100 lines:</label><input value="2164" name="steps_line" type="number"><br>
 
 
       <label for="crop_start">Crop start:</label><input name="crop_start" type="number"><br>

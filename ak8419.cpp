@@ -50,7 +50,13 @@ uint8_t reg_table[87] = {
 
 uint8_t pixel_buffer_1[CCD_BYTES] = {};
 uint8_t pixel_buffer_2[CCD_BYTES] = {};
-uint8_t *pixel_buffers[2] = {pixel_buffer_1, pixel_buffer_2};
+uint8_t pixel_buffer_3[CCD_BYTES] = {};
+uint8_t pixel_buffer_4[CCD_BYTES] = {};
+uint8_t pixel_buffer_5[CCD_BYTES] = {};
+uint8_t pixel_buffer_6[CCD_BYTES] = {};
+uint8_t pixel_buffer_7[CCD_BYTES] = {};
+uint8_t pixel_buffer_8[CCD_BYTES] = {};
+uint8_t *pixel_buffers[8] = {pixel_buffer_1, pixel_buffer_2,pixel_buffer_3,pixel_buffer_4,pixel_buffer_5,pixel_buffer_6,pixel_buffer_7,pixel_buffer_8};
 
 int buffer_num = 0;
 bool data_ready = false;
@@ -197,7 +203,17 @@ bool ccd_start_capture()
   ccd_config->sync_pattern = true;
   ccd_config->tg_enable = false;
   ccd_config->ADCK0_pin_out = 0b101;
-  ccd_config->clock_freq=0b11;
+  ccd_config->clock_freq=0b00;
+  // ccd_config->P1_rise_D_1 = 15;
+  // ccd_config->P1_rise_D_2 = 4;
+  // ccd_config->P1_fall_D_1 = 10;
+  // ccd_config->P1_fall_D_2 = 15;
+  // ccd_config->P1_rise_D_3 = 0b1010;
+  // ccd_config->P1_rise_D_4 = 15;
+  // ccd_config->P1_fall_D_3 = 0b0000;
+  // ccd_config->P1_fall_D_4 = 15;
+  // ccd_config->SHR_rise = 19+16;
+  // ccd_config->SHR_fall = 16+16;
   write_registers();
   if (!check_registers())
   {
@@ -264,6 +280,12 @@ bool ccd_stop_capture()
 }
 bool ccd_init()
 {
+  //Calculate the clock speed
+  //huidge divider  is 30
+  // int target_speed = 7000000;
+  // int target_divider = CLOCK_SPEED/target_speed;
+  
+
   // Init pins and set correct direction
   gpio_init(SDENDB_PIN);
   gpio_init(RESETB_PIN);

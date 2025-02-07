@@ -718,13 +718,18 @@ static void rp2040_sdio_tx_irq() {
   if (g_sdio.transfer_state == SDIO_TX_WAIT_IDLE) {
     if (!dma_channel_is_busy(SDIO_DMA_CHB)) {
       g_sdio.wr_status = check_sdio_write_response(g_sdio.card_response);
+      if(g_sdio.wr_status == SDIO_ERR_WRITE_CRC){
+        //Don't increment blocks_done to retry transmission of failed block
+        printf("Retrying transmission after CRC error\n");
 
-      if (g_sdio.wr_status != SDIO_OK) {
+      }
+      else if (g_sdio.wr_status != SDIO_OK) {
         rp2040_sdio_stop();
         return;
       }
-
+      if(g_sdio.wr_status == SDIO_OK){
       g_sdio.blocks_done++;
+      }
       if (g_sdio.blocks_done < g_sdio.total_blocks) {
         sdio_start_next_block_tx();
         g_sdio.transfer_state = SDIO_TX;

@@ -33,3 +33,5 @@ struct stepper_struct
 void move_to(int pos, double speed, double accel);
 void move_distance(int steps, float speed, float accel);
 void stepper_init();
+int accel_steps(double speed, double accel);
+enum stepper_state get_stepper_state();

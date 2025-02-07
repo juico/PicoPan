@@ -17,10 +17,20 @@ using namespace std;
 #define RETURN_SPEED 5000
 
 #define LED_PIN 25
+//For V350 sensor, needs work
+// #define CCD_PIXELS 8000*3
+// #define CCD_BYTES CCD_PIXELS * 2
+// #define CLOCK_SPEED 100000000
 
+//For the V100 sensor
 #define CCD_PIXELS 16384
 #define CCD_BYTES CCD_PIXELS * 2
-#define CLOCK_SPEED 250000000
+#define CLOCK_SPEED 150000000
+#define CCD_PIXEL_DARK_START 336
+#define CCD_PIXEL_LIGHT_START 376
+#define CCD_PIXEL_CAPTURE_NUM 4864
+#define CCD_PIXEL_PREVIEW_NUM 4736
+#define PIXELS_PREVIEW CCD_PIXEL_PREVIEW_NUM/8
 
 struct __attribute__((__packed__)) ak8419_config {
   bool power_down : 1;

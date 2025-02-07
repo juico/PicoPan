@@ -12,7 +12,10 @@
 #include <cstdlib>
 #include <cstring>
 #include "jpeg.h"
-#define PIXELS_PREVIEW 672
+#define STEPPER_ACCEL 200000.0
+#define STEPPER_MOVE_SPEED 40000.0
+#define JPEG_QUALITY 90
+#define FOCUS_SEGMENTS 8
 int lines_remaining = 0;
 uint8_t gain_red = 0, gain_green = 0, gain_blue = 0;
 extern int buffer_num;
@@ -32,12 +35,12 @@ uint8_t preview_buffer[16 * (3 * PIXELS_PREVIEW)] = {};
 
 uint8_t msg_focus[MSG_HEADER_LEN + 8 * 4] = {};
 uint8_t msg_histogram[MSG_HEADER_LEN + HISTOGRAM_LENGTH] = {};
-uint preview_frame = 0;
+int preview_frame = 0;
 void auto_offset()
 {
   set_offset(128, 128, 128);
   set_gain(0, 0, 0);
-  //data_ready=false;
+  // data_ready=false;
   avg_sum_dark_red = 0;
   avg_sum_dark_green = 0;
   avg_sum_dark_blue = 0;
@@ -52,13 +55,13 @@ void auto_offset()
     }
     printf("line %d ready\n", i);
     data_ready = false;
-    write_ready=true;
+    write_ready = true;
   }
 
   ccd_stop_capture();
-  int dark_pixel_start=336;
-  int dark_pixel_end=376;
-  int dark_pixel_num = dark_pixel_end-dark_pixel_start;
+  int dark_pixel_start = 336;
+  int dark_pixel_end = 376;
+  int dark_pixel_num = dark_pixel_end - dark_pixel_start;
   for (int j = dark_pixel_start; j < dark_pixel_end; j++)
   {
     avg_sum_dark_red = avg_sum_dark_red +
@@ -72,10 +75,9 @@ void auto_offset()
                         (pixel_buffers[buffer_num ^ 1][j * 6 + 4] << 8) +
                         pixel_buffers[buffer_num ^ 1][j * 6 + 5];
   }
-  avg_sum_dark_red = avg_sum_dark_red/dark_pixel_num;
-  avg_sum_dark_green = avg_sum_dark_green/dark_pixel_num;
-  avg_sum_dark_blue = avg_sum_dark_blue/dark_pixel_num;
-
+  avg_sum_dark_red = avg_sum_dark_red / dark_pixel_num;
+  avg_sum_dark_green = avg_sum_dark_green / dark_pixel_num;
+  avg_sum_dark_blue = avg_sum_dark_blue / dark_pixel_num;
 
   set_offset(128 - (avg_sum_dark_red) / 56, 128 - (avg_sum_dark_green) / 56,
              128 - (avg_sum_dark_blue) / 56);
@@ -113,13 +115,14 @@ void camera_task()
   uint16_t *pixelbuffer;
   struct web_command command;
   int pixels_per_line = 5400;
-  int real_pixels = 4864;
-  int start_pixels = 272;
-
-  uint32_t ratio = 8 * 51 * 16;
-  uint32_t steps_total = 3 * 150 * ratio / 18;
-  uint32_t lines_total = 4000;
-  steps_per_line = steps_total / lines_total;
+  //int real_pixels = 7168;
+  // int real_pixels = 4864;//7424;
+  //int start_pixels = 272;
+double stepper_speed;
+  // uint32_t ratio = 8 * 51 * 16;
+  // uint32_t steps_total = 3 * 150 * ratio / 18;
+  // uint32_t lines_total = 4000;
+  // steps_per_line = steps_total / lines_total;
 
   while (1)
   {
@@ -134,21 +137,23 @@ void camera_task()
           add_line_to_preview();
           if (preview_frame % 8 == 0)
           {
-            uint8_t* preview_block = preview_buffer + ((preview_frame-8) * 3 * PIXELS_PREVIEW);
-            //printf("writing block\n");
-            int extra_lines=0;
-            if(preview_frame>=16){
-              preview_frame=0;
+            uint8_t *preview_block = preview_buffer + ((preview_frame - 8) * 3 * PIXELS_PREVIEW);
+            // printf("writing block\n");
+            int extra_lines = 0;
+            if (preview_frame >= 16)
+            {
+              preview_frame = 0;
             }
             for (int x = 0; x < PIXELS_PREVIEW; x += 8)
             {
               process_block(preview_block, PIXELS_PREVIEW, x);
-              if(data_ready){
+              if (data_ready)
+              {
                 add_line_to_preview();
                 extra_lines++;
               }
             }
-            //printf("extra lines captured%d\n",extra_lines);
+            // printf("extra lines captured%d\n",extra_lines);
           }
         }
       }
@@ -158,7 +163,7 @@ void camera_task()
         lines_remaining = 0;
         ccd_stop_capture();
         jo_write_jpg_end();
-        move_to(0, 40000.0, 200000.0);
+        move_to(0, STEPPER_MOVE_SPEED, STEPPER_ACCEL);
         printf("Klaar met preview");
       }
       break;
@@ -167,8 +172,8 @@ void camera_task()
       {
         if (data_ready)
         {
-          tiff_write_line(pixel_buffers[buffer_num ^ 1] + (start_pixels * 6),
-                          6 * real_pixels);
+          tiff_write_line(pixel_buffers[buffer_num ^ 1] + (CCD_PIXEL_DARK_START * 6),
+                          6 * CCD_PIXEL_CAPTURE_NUM);
           data_ready = false;
           write_ready = true;
           lines_remaining--;
@@ -177,12 +182,12 @@ void camera_task()
       }
       else
       {
-        
+
         camera_state = COMMAND_IDLE;
         lines_remaining = 0;
         tiff_close();
         ccd_stop_capture();
-        move_to(0, 40000.0, 200000.0);
+        move_to(0, STEPPER_MOVE_SPEED, STEPPER_ACCEL);
         printf("klaar met schrijven");
       }
       break;
@@ -192,13 +197,12 @@ void camera_task()
       {
         pixelbuffer = ((uint16_t *)pixel_buffers[buffer_num ^ 1]);
         int32_t diff;
-        int seglen = 625;
-        int segnum = 8;
+        int seglen = CCD_PIXEL_PREVIEW_NUM/FOCUS_SEGMENTS;
         uint64_t focus = 0;
-        for (int j = 0; j < segnum; j++)
+        for (int j = 0; j < FOCUS_SEGMENTS; j++)
         {
           focus = 0;
-          for (int i = j * seglen; i < (seglen * (j + 1) - 2); i++)
+          for (int i = j * seglen+CCD_PIXEL_LIGHT_START; i < (seglen * (j + 1) - 2); i++)
           {
             diff = (int16_t)(__builtin_bswap16(pixelbuffer[i * 3]) >> 1) -
                    (int16_t)(__builtin_bswap16(pixelbuffer[(i + 2) * 3]) >> 1);
@@ -279,11 +283,23 @@ void camera_task()
       case COMMAND_CAPTURE:
         lines_remaining = command.lines;
         set_exposure_time(command.exp_time);
-        auto_offset();
+        // auto_offset();
         set_gain(command.gain, command.gain, command.gain);
-        if (tiff_create(command.lines, real_pixels))
+        if (tiff_create(command.lines, CCD_PIXEL_CAPTURE_NUM))
         {
-          move_to((command.steps_line * command.exp_time)/100 * command.lines, (command.steps_line * command.exp_time)/100, 200000.0);
+          stepper_speed = (((double)command.steps_line) / 100.0 * ((double)command.exp_time));
+
+          move_to(-accel_steps(stepper_speed, STEPPER_ACCEL), STEPPER_MOVE_SPEED, STEPPER_ACCEL);
+          while (get_stepper_state() != STOP)
+          {
+            tight_loop_contents();
+          }
+
+          move_to((((int)command.steps_line) *((int) command.lines))/100+accel_steps(stepper_speed, STEPPER_ACCEL), stepper_speed, STEPPER_ACCEL);
+          while (get_stepper_state() != CONSTANT)
+          {
+            tight_loop_contents();
+          }
           ccd_start_capture();
 
           camera_state = COMMAND_CAPTURE;
@@ -304,20 +320,30 @@ void camera_task()
         preview_frame = 0;
         lines_remaining = command.lines / 8;
         set_exposure_time(command.exp_time);
-        auto_offset();
+        // auto_offset();
         set_gain(command.gain, command.gain, command.gain);
         camera_state = COMMAND_PREVIEW;
-        jo_write_jpg(PIXELS_PREVIEW, command.lines / 8, 80);
+        jo_write_jpg(PIXELS_PREVIEW, command.lines / 8, JPEG_QUALITY);
+        stepper_speed = 8.0 * (((double)command.steps_line / 100.0 * (double)command.exp_time));
 
-        move_to((command.steps_line * command.exp_time)/100 * command.lines, 8 * (command.steps_line * command.exp_time)/100, 200000.0);
+        move_to(-accel_steps(stepper_speed, STEPPER_ACCEL), stepper_speed, STEPPER_ACCEL);
+        while (get_stepper_state() != STOP)
+        {
+          tight_loop_contents();
+        }
 
+        move_to((((int)command.steps_line) *(int) command.lines)/100+accel_steps(stepper_speed, STEPPER_ACCEL), stepper_speed, STEPPER_ACCEL);
+        while (get_stepper_state() != CONSTANT)
+        {
+          tight_loop_contents();
+        }
         ccd_start_capture();
         printf("starting preview.");
         break;
       case COMMAND_EXPOSE:
         lines_remaining = command.lines;
         set_exposure_time(command.exp_time);
-        auto_offset();
+        // auto_offset();
         set_gain(command.gain, command.gain, command.gain);
         camera_state = COMMAND_EXPOSE;
         ccd_start_capture();
@@ -326,11 +352,26 @@ void camera_task()
       case COMMAND_FOCUS:
         lines_remaining = command.lines;
         set_exposure_time(command.exp_time);
-        auto_offset();
+
         set_gain(command.gain, command.gain, command.gain);
         camera_state = COMMAND_FOCUS;
         ccd_start_capture();
-
+        // auto_offset();
+        //  Throw away the first 8 lines
+        for (int i = 0; i < 8; ++i)
+        {
+          while (!data_ready)
+          {
+            sleep_ms(1);
+          }
+          data_ready = false;
+          write_ready = true;
+        }
+        break;
+      case COMMAND_MOVE:
+      printf("moving\n");
+        move_to((((int)command.steps_line) *(int) command.lines)/100  , STEPPER_MOVE_SPEED, STEPPER_ACCEL);
+        camera_state = COMMAND_IDLE;
         break;
       default:
         break;
@@ -341,22 +382,31 @@ void camera_task()
 
 void add_line_to_preview()
 {
-  if(preview_frame>=16){
-    preview_frame=0;
+  if (preview_frame >= 16)
+  {
+    preview_frame = 0;
   }
+  // shift lines per color to match in preview
+  // int preview_frame_r = ((preview_frame) % 16) * PIXELS_PREVIEW;
+  // int preview_frame_g = ((preview_frame + 2) % 16) * PIXELS_PREVIEW;
+  // int preview_frame_b = ((preview_frame + 4) % 16) * PIXELS_PREVIEW;
+  int preview_frame_r = ((preview_frame+2) % 16) * PIXELS_PREVIEW;
+  int preview_frame_g = ((preview_frame + 1) % 16) * PIXELS_PREVIEW;
+  int preview_frame_b = ((preview_frame ) % 16) * PIXELS_PREVIEW;
+  int read_buffer = buffer_num ^ 1;
+  int j=CCD_PIXEL_LIGHT_START/8;
   for (int i = 0; i < PIXELS_PREVIEW; i++)
   {
     // only extract the MSB and copy it to the preview buffer
-    preview_buffer[(preview_frame * PIXELS_PREVIEW + i) * 3] = pixel_buffers[buffer_num ^ 1][(i * 8) * 6];
-    preview_buffer[(preview_frame * PIXELS_PREVIEW + i) * 3 + 1] =
-        pixel_buffers[buffer_num ^ 1][(i * 8) * 6 + 2];
-    preview_buffer[(preview_frame * PIXELS_PREVIEW + i) * 3 + 2] =
-        pixel_buffers[buffer_num ^ 1][(i * 8) * 6 + 4];
+    preview_buffer[(preview_frame_r + i) * 3] = pixel_buffers[read_buffer][(j*8)*6];
+    preview_buffer[(preview_frame_g + i) * 3 + 1] = pixel_buffers[read_buffer][(j*8)*6+ 2];
+    preview_buffer[(preview_frame_b + i) * 3 + 2] = pixel_buffers[read_buffer][(j*8)*6 + 4];
+    j++;//Increase by 6 * 8 bytes 
   }
   preview_frame++;
 
   write_ready = true;
   data_ready = false;
   lines_remaining--;
-  //printf("Lines remaing:%d\n",lines_remaining);
+  // printf("Lines remaing:%d\n",lines_remaining);
 }

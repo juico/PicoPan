@@ -52,9 +52,20 @@ void __not_in_flash_func(stepper_isr)()
         gpio_put(ENABLE_PIN, 1);
     }
 }
+int accel_steps(double speed, double accel){
+    return  ((speed * speed) / (2.0 * accel) + 1.0);
+}
+enum stepper_state get_stepper_state(){
+    return stepper.stepper_state;
+}
 void move_to(int pos, double speed, double accel)
 {
-    int accel_distance = ((speed * speed) / (2.0 * accel) + 1.0); // Does not take into account not reaching speed in time
+    int accel_distance = accel_steps(speed,accel); 
+
+    int steps = abs(stepper.step-pos);
+    if(steps<2*accel_distance){
+        accel_distance=steps/2;
+    }
     if (pos > stepper.step)
     {
         gpio_put(DIR_PIN, 1);
@@ -69,7 +80,6 @@ void move_to(int pos, double speed, double accel)
         stepper.accel_step = stepper.step - accel_distance;
         stepper.deaccel_step = pos + (accel_distance - 1);
     }
-            printf("Moving to %d,accel_step:%d,deaccel_step%d\n", stepper.target_step, stepper.accel_step, stepper.deaccel_step);
 
     stepper.target_step = pos;
     stepper.rest=0;
@@ -77,7 +87,9 @@ void move_to(int pos, double speed, double accel)
     stepper.c_constant = 256000000.0 / (speed );
     stepper.stepper_state = ACCEL;
     stepper.c_step = 256000000.0 * (0.676) * sqrt(2.0 / accel)  ;
-    pwm_set_wrap(stepper.stepper_slice, stepper.c_step);
+    printf("Moving to %d,accel_step:%d,deaccel_step%d\n", stepper.target_step, stepper.accel_step, stepper.deaccel_step);
+    pwm_set_chan_level(stepper.stepper_slice, stepper.stepper_channel, (stepper.c_step>>8) / 2);
+    pwm_set_wrap(stepper.stepper_slice, stepper.c_step>>8);
     pwm_set_enabled(stepper.stepper_slice, true);
     gpio_put(ENABLE_PIN, 0);
 

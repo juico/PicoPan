@@ -5,6 +5,7 @@
 #define COMMAND_ABORT 3
 #define COMMAND_EXPOSE 4
 #define COMMAND_IDLE 5
+#define COMMAND_MOVE 6
 #define MSG_HEADER_LEN 4
 #define HISTOGRAM_LENGTH 3 * 2 * 128
 #define MSG_PREVIEW 1;
