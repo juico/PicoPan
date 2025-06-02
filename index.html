@@ -1,0 +1,102 @@
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Click Coordinates with Line and Box</title>
+    <style>
+        /* Container for the image, line, and box */
+        .image-container {
+            position: relative;
+            display: inline-block;
+        }
+
+        /* Style for the vertical line */
+        .vertical-line {
+            position: absolute;
+            top: 0;
+            width: 2px;
+            height: 100%;
+            background-color: rgba(255, 0, 0, 0.6);
+            display: none; /* Initially hidden */
+        }
+
+        /* Style for the box */
+        .info-box {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100px;
+            height: 100%;
+            border: 1px;
+            border-color:  black;
+            border-style: solid;
+            background-color: rgba(255, 255, 255, 0.6);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            display: none; /* Initially hidden */
+        }
+
+        img {
+            border: 1px solid black;
+        }
+    </style>
+</head>
+<body>
+    <h1>Click on the Image</h1>
+    <div class="image-container">
+        <img id="myImage">
+        <!-- Vertical line -->
+        <div id="verticalLine" class="vertical-line"></div>
+        <!-- Info box -->
+        <div id="infoBox" class="info-box">Info</div>
+    </div>
+
+    <p>Coordinates: <span id="coordinates"></span></p>
+
+    <script>
+        // Get the image, line, and box elements
+        const image = document.getElementById('myImage');
+        const verticalLine = document.getElementById('verticalLine');
+        const infoBox = document.getElementById('infoBox');
+
+        // Add a click event listener to the image
+        image.addEventListener('click', function(event) {
+            // Get the bounding rectangle of the image
+            const rect = image.getBoundingClientRect();
+
+            // Calculate the coordinates relative to the image
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            // Display the coordinates
+            document.getElementById('coordinates').textContent = `X: ${x}, Y: ${y}`;
+
+            // Position the vertical line at the clicked x coordinate
+            verticalLine.style.left = `${x}px`;
+            verticalLine.style.display = 'block'; // Make the line visible
+
+            // Position the info box 50 pixels to the right of the line
+            const boxOffset = 50; // Distance from the line
+            const boxWidth = 100; // Width of the info box
+            const imageWidth = rect.width; // Width of the image
+
+            // Calculate the box's left position
+            let boxLeft = x + boxOffset;
+
+            // If the box goes outside the image, position it outside
+            if (boxLeft + boxWidth > imageWidth) {
+                boxLeft = imageWidth + boxOffset; // Place it outside the image
+            }
+
+            infoBox.style.left = `${boxLeft}px`;
+            infoBox.style.display = 'block'; // Make the box visible
+        });
+    </script>
+</body>
+</html>

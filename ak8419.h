@@ -251,7 +251,8 @@ struct __attribute__((__packed__)) ak8419_config {
 
   uint32_t : 32;
 };
-
+bool ak8419_buffer_free();
+bool ak8419_data_ready();
 bool ccd_init();
 bool ccd_start_capture();
 bool ccd_stop_capture();

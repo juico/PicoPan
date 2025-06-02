@@ -1,3 +1,4 @@
+#define TCP_TMR_INTERVAL       20
 #include <math.h>
 #include <stdio.h>
 #include "pico/stdlib.h"
@@ -101,7 +102,7 @@ queue_init(&dataqueue,sizeof(web_data),4);
   }
 
 
-  const char *ap_name = "picow_test";
+  const char *ap_name = "PicoPan";
 #if 1
   const char *password = "password";
 #else
@@ -164,15 +165,15 @@ queue_init(&dataqueue,sizeof(web_data),4);
       timedelta = time_us_32();
       //printf("sending line\n");
     }
-    // if (camera_state != COMMAND_CAPTURE) {
+    if (camera_state != COMMAND_CAPTURE) {
       cyw43_arch_poll();
       server.popMessages();
-      if((time_us_32()-timedelta)>5000000){
-        timedelta=time_us_32();
-      stats_display();
+      // if((time_us_32()-timedelta)>5000000){
+      //   timedelta=time_us_32();
+      // stats_display();
 
-      }
-    // }
+      // }
+    }
   }
   dns_server_deinit(&dns_server);
   dhcp_server_deinit(&dhcp_server);

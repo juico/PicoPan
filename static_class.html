@@ -317,6 +317,7 @@ this.moveStepper(8*x);
     if(command == 2){//show focus plot when focus command is send
       this.focusCanvas.style.display='block';
       this.histogramCanvas.style.display='none';
+      this.focusMax=Array(8).fill(0);
     }
     if(command == 3){//show histogram plot when histogram command is send
       this.focusCanvas.style.display='none';
@@ -370,12 +371,12 @@ new CanvasApp();
 <body>
     <div id="connectionState" ></div>
     <div id="imageContainer" class="image-container">
-      <img id="imageJPEG" src="https://placehold.co/600x400/EEE/31343C"/>
+      <img id="imageJPEG" />
               <!-- Vertical line -->
               <div id="verticalLine" class="vertical-line"></div>
               <div id="plotBox" class="plot-box">
-                <canvas  id="focusCanvas" width="500" height="700" style="border-style: dotted;border-width: 2px;"></canvas>
-                <canvas  id="histogramCanvas" width="512" height="300" style="border-style: dotted;border-width: 2px;"></canvas>
+                <canvas  id="focusCanvas" width="500" height="592" style=""></canvas>
+                <canvas  id="histogramCanvas" width="512" height="300" style=""></canvas>
                 <!-- <canvas  id="focusCanvas" width="500" height="100%" style="border-style: dotted;border-width: 2px;"></canvas>
                 <canvas  id="histogramCanvas" width="512" height="100%" style="border-style: dotted;border-width: 2px;"></canvas> -->
               </div>

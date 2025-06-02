@@ -43,7 +43,7 @@ project(PicoPan C CXX ASM)
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 add_subdirectory(libs)
-
+add_subdirectory(bench)
 # Add executable. Default name is the project name, version 0.1
 add_library(lwipopts_provider INTERFACE)
 target_include_directories(lwipopts_provider INTERFACE ${CMAKE_CURRENT_LIST_DIR}/include)
@@ -70,6 +70,8 @@ pico_generate_pio_header(PicoPan ${CMAKE_CURRENT_LIST_DIR}/step.pio)
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(PicoPan 0)
 pico_enable_stdio_usb(PicoPan 1)
+pico_enable_stdio_uart(bench 0)
+pico_enable_stdio_usb(bench 1)
 
 # Add the standard library to the build
 target_link_libraries(PicoPan

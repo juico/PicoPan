@@ -21,7 +21,7 @@ PIO pio_ak8419 = pio0;
 uint sm_data_in = 1;
 uint sm_trigger = 2;
 uint sm_sync = 3;
-
+int buffer_full=0;
 uint16_t int_time = 100;
 uint8_t reg_table[87] = {
     0b00000000, 0b00000010, 0b00000000, 0b00000001,
@@ -58,15 +58,22 @@ uint8_t pixel_buffer_7[CCD_BYTES] = {};
 uint8_t pixel_buffer_8[CCD_BYTES] = {};
 uint8_t *pixel_buffers[8] = {pixel_buffer_1, pixel_buffer_2,pixel_buffer_3,pixel_buffer_4,pixel_buffer_5,pixel_buffer_6,pixel_buffer_7,pixel_buffer_8};
 
-int buffer_num = 0;
-bool data_ready = false;
+ 
+int ak8419_write_pointer=0;
+int ak8419_read_pointer=0;
+int ak8419_buffer_N=8;
+
 bool registercheck = false;
-bool write_ready = true;
-uint32_t lines_aqcuired = 0;
-uint32_t lines_written = 0;
+
 
 struct ak8419_config *ccd_config = (ak8419_config *)reg_table;
+bool ak8419_buffer_free(){
+      return (((ak8419_write_pointer+1)%ak8419_buffer_N)!=ak8419_read_pointer);
 
+}
+bool ak8419_data_ready(){
+    return (ak8419_write_pointer!=ak8419_read_pointer);
+}
 void write_register(uint8_t adress, uint8_t data)
 {
   gpio_init(SDATA_PIN);
@@ -181,24 +188,25 @@ void toggle_reset()
 void data_in_finish()
 {
   dma_hw->ints0 = 1u << pixel_dma_chan;
-  lines_aqcuired++;
-  // Only if the previous pixel buffer is written to the SD card we should
-  // switch buffer.
-  buffer_num = buffer_num ^ write_ready;
-  write_ready = false;
+  // Increment the write pointer when there is space left in the buffer otherwise just overwrite last written line
+  if(ak8419_buffer_free())
+  {
+    ak8419_write_pointer=(ak8419_write_pointer+1)%ak8419_buffer_N;
+  }else{
+    buffer_full++;
+  }
   pio_sm_exec(pio_ak8419, sm_data_in, pio_encode_jmp(offset_data_in + 2));
   pio_sm_clear_fifos(pio_ak8419, sm_data_in);
   pio_sm_exec(pio_ak8419, sm_data_in, pio_encode_push(false, false));
-
   pio_sm_clear_fifos(pio_ak8419, sm_data_in);
-
-  data_ready = true;
-  dma_channel_set_write_addr(pixel_dma_chan, pixel_buffers[buffer_num], true);
+  dma_channel_set_write_addr(pixel_dma_chan, pixel_buffers[ak8419_write_pointer], true);
 }
 bool ccd_start_capture()
 {
   gpio_put(RESETB_PIN, 1);
-
+  ak8419_write_pointer=0;
+  ak8419_read_pointer=0;
+  buffer_full=0;
   // configure the adc to send sync patterns in order to sync with PIO(sm_sync)
   ccd_config->sync_pattern = true;
   ccd_config->tg_enable = false;
@@ -244,7 +252,7 @@ bool ccd_start_capture()
   irq_set_enabled(DMA_IRQ_0, true);
   dma_channel_configure(pixel_dma_chan,               // Channel to be configured
                         &c,                           // The configuration we just created
-                        pixel_buffers[buffer_num],    // The initial write address
+                        pixel_buffers[ak8419_write_pointer],    // The initial write address
                         &pio_ak8419->rxf[sm_data_in], // Adress of data_in FIFO
                         CCD_PIXELS / 2,               // Every 32 bits contain 2 pixels
                         true                          // Start immediately.

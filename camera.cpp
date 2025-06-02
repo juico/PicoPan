@@ -13,15 +13,17 @@
 #include <cstring>
 #include "jpeg.h"
 #define STEPPER_ACCEL 200000.0
-#define STEPPER_MOVE_SPEED 40000.0
+#define STEPPER_MOVE_SPEED 30000.0
 #define JPEG_QUALITY 90
 #define FOCUS_SEGMENTS 8
+#define MAX_PLOT_RATE 10
+uint64_t last_plot_output =0;
 int lines_remaining = 0;
 uint8_t gain_red = 0, gain_green = 0, gain_blue = 0;
-extern int buffer_num;
-extern bool data_ready;
-extern uint8_t *pixel_buffers[2];
-extern bool write_ready;
+extern uint8_t *pixel_buffers[8];
+extern int ak8419_read_pointer;
+extern int ak8419_buffer_N;
+extern int buffer_full;
 extern queue_t commandqueue;
 extern queue_t dataqueue;
 uint32_t avg_sum_dark_red, avg_sum_dark_green, avg_sum_dark_blue;
@@ -49,13 +51,12 @@ void auto_offset()
   // Wait for data to be ready
   for (int i = 0; i < 8; ++i)
   {
-    while (!data_ready)
+    while (!ak8419_data_ready())
     {
       sleep_ms(1);
     }
     printf("line %d ready\n", i);
-    data_ready = false;
-    write_ready = true;
+    ak8419_read_pointer=(ak8419_read_pointer+1)%ak8419_buffer_N;
   }
 
   ccd_stop_capture();
@@ -65,15 +66,15 @@ void auto_offset()
   for (int j = dark_pixel_start; j < dark_pixel_end; j++)
   {
     avg_sum_dark_red = avg_sum_dark_red +
-                       (pixel_buffers[buffer_num ^ 1][j * 6] << 8) +
-                       pixel_buffers[buffer_num ^ 1][j * 6 + 1];
+                       (pixel_buffers[ak8419_read_pointer][j * 6] << 8) +
+                       pixel_buffers[ak8419_read_pointer][j * 6 + 1];
 
     avg_sum_dark_green = avg_sum_dark_green +
-                         (pixel_buffers[buffer_num ^ 1][j * 6 + 2] << 8) +
-                         pixel_buffers[buffer_num ^ 1][j * 6 + 3];
+                         (pixel_buffers[ak8419_read_pointer][j * 6 + 2] << 8) +
+                         pixel_buffers[ak8419_read_pointer][j * 6 + 3];
     avg_sum_dark_blue = avg_sum_dark_blue +
-                        (pixel_buffers[buffer_num ^ 1][j * 6 + 4] << 8) +
-                        pixel_buffers[buffer_num ^ 1][j * 6 + 5];
+                        (pixel_buffers[ak8419_read_pointer][j * 6 + 4] << 8) +
+                        pixel_buffers[ak8419_read_pointer][j * 6 + 5];
   }
   avg_sum_dark_red = avg_sum_dark_red / dark_pixel_num;
   avg_sum_dark_green = avg_sum_dark_green / dark_pixel_num;
@@ -132,7 +133,7 @@ double stepper_speed;
     case COMMAND_PREVIEW:
       if (lines_remaining > 0)
       {
-        if (data_ready)
+        if (ak8419_data_ready())
         {
           add_line_to_preview();
           if (preview_frame % 8 == 0)
@@ -147,7 +148,7 @@ double stepper_speed;
             for (int x = 0; x < PIXELS_PREVIEW; x += 8)
             {
               process_block(preview_block, PIXELS_PREVIEW, x);
-              if (data_ready)
+              if (ak8419_data_ready())
               {
                 add_line_to_preview();
                 extra_lines++;
@@ -163,6 +164,9 @@ double stepper_speed;
         lines_remaining = 0;
         ccd_stop_capture();
         jo_write_jpg_end();
+        while(get_stepper_state() !=STOP){
+          tight_loop_contents();
+        }
         move_to(0, STEPPER_MOVE_SPEED, STEPPER_ACCEL);
         printf("Klaar met preview");
       }
@@ -170,13 +174,12 @@ double stepper_speed;
     case COMMAND_CAPTURE:
       if (lines_remaining > 0)
       {
-        if (data_ready)
+        if (ak8419_data_ready())
         {
-          tiff_write_line(pixel_buffers[buffer_num ^ 1] + (CCD_PIXEL_DARK_START * 6),
+          tiff_write_line(pixel_buffers[ak8419_read_pointer] + (CCD_PIXEL_DARK_START * 6),
                           6 * CCD_PIXEL_CAPTURE_NUM);
-          data_ready = false;
-          write_ready = true;
           lines_remaining--;
+          ak8419_read_pointer=(ak8419_read_pointer+1)%ak8419_buffer_N;
           // sleep_ms(30); 
         }
       }
@@ -188,14 +191,14 @@ double stepper_speed;
         tiff_close();
         ccd_stop_capture();
         move_to(0, STEPPER_MOVE_SPEED, STEPPER_ACCEL);
-        printf("klaar met schrijven");
+        printf("klaar met schrijven, buffer_full %d\n",buffer_full);
       }
       break;
 
     case COMMAND_FOCUS:
-      if (data_ready)
+      if (ak8419_data_ready())
       {
-        pixelbuffer = ((uint16_t *)pixel_buffers[buffer_num ^ 1]);
+        pixelbuffer = ((uint16_t *)pixel_buffers[ak8419_read_pointer]);
         int32_t diff;
         int seglen = CCD_PIXEL_PREVIEW_NUM/FOCUS_SEGMENTS;
         uint64_t focus = 0;
@@ -216,22 +219,23 @@ double stepper_speed;
           }
           focus_data[j] = (float)focus;
         }
-        struct web_data web_focus;
-        web_focus.buffer = msg_focus;
-        web_focus.length = sizeof(msg_focus);
-        queue_add_blocking(&dataqueue, &web_focus);
+        ak8419_read_pointer=(ak8419_read_pointer+1)%ak8419_buffer_N;
+        //Limit the output rate to reduce dropping connection when using short integration time
 
-        // multicore_fifo_push_blocking((uint32_t)msg_focus);
+        if(time_us_64()-last_plot_output >1000000/MAX_PLOT_RATE){
+          last_plot_output = time_us_64();
+          struct web_data web_focus;
+          web_focus.buffer = msg_focus;
+          web_focus.length = sizeof(msg_focus);
+          queue_add_blocking(&dataqueue, &web_focus);
+        }
 
-        // sleep_ms(30);
-        write_ready = true;
-        data_ready = false;
+
       }
       break;
     case COMMAND_EXPOSE:
-      if (data_ready)
+      if (ak8419_data_ready())
       {
-        pixelbuffer = ((uint16_t *)pixel_buffers[buffer_num ^ 1]);
 
         for (int i = 0; i < HISTOGRAM_LENGTH / 2; i++)
         {
@@ -239,21 +243,24 @@ double stepper_speed;
         }
         for (int i = 0; i < pixels_per_line; i++)
         {
-          histogram_data[(pixel_buffers[buffer_num ^ 1][i * 6] >> 1)]++;
-          histogram_data[(pixel_buffers[buffer_num ^ 1][i * 6 + 2] >> 1) +
+          histogram_data[(pixel_buffers[ak8419_read_pointer][i * 6] >> 1)]++;
+          histogram_data[(pixel_buffers[ak8419_read_pointer][i * 6 + 2] >> 1) +
                          128]++;
-          histogram_data[(pixel_buffers[buffer_num ^ 1][i * 6 + 4] >> 1) +
+          histogram_data[(pixel_buffers[ak8419_read_pointer][i * 6 + 4] >> 1) +
                          256]++;
         }
-        struct web_data web_historgram;
-        web_historgram.length = sizeof(msg_histogram);
-        web_historgram.buffer = msg_histogram;
-        queue_add_blocking(&dataqueue, &web_historgram);
+        ak8419_read_pointer=(ak8419_read_pointer+1)%ak8419_buffer_N;
+        //Limit the output rate to reduce dropping connection when using short integration time
+        if(time_us_64()-last_plot_output >1000000/MAX_PLOT_RATE){
+          last_plot_output = time_us_64();
+          struct web_data web_historgram;
+          web_historgram.length = sizeof(msg_histogram);
+          web_historgram.buffer = msg_histogram;
+          queue_add_blocking(&dataqueue, &web_historgram);
+        }
 
-        // multicore_fifo_push_blocking((uint32_t)msg_histogram);
-        write_ready = true;
 
-        data_ready = false;
+
       }
       break;
 
@@ -263,18 +270,13 @@ double stepper_speed;
     // if command is recieved from other core
     if (!queue_is_empty(&commandqueue))
     {
-      // memcpy(&command, (void *)multicore_fifo_pop_blocking(), 16);
       queue_remove_blocking(&commandqueue, &command);
 
       // set_gain(command.gain);
       switch (command.command)
       {
       case COMMAND_ABORT:
-        // if(camera_state==COMMAND_CAPTURE)
-        // {
-        //     tiff_close();
-        //     camera_state = COMMAND_IDLE;
-        // }
+
         camera_state = COMMAND_IDLE;
         lines_remaining = 0;
         ccd_stop_capture();
@@ -360,12 +362,12 @@ double stepper_speed;
         //  Throw away the first 8 lines
         for (int i = 0; i < 8; ++i)
         {
-          while (!data_ready)
+          while (!ak8419_data_ready())
           {
             sleep_ms(1);
           }
-          data_ready = false;
-          write_ready = true;
+          printf("line %d ready\n", i);
+          ak8419_read_pointer=(ak8419_read_pointer+1)%ak8419_buffer_N;
         }
         break;
       case COMMAND_MOVE:
@@ -393,20 +395,18 @@ void add_line_to_preview()
   int preview_frame_r = ((preview_frame+2) % 16) * PIXELS_PREVIEW;
   int preview_frame_g = ((preview_frame + 1) % 16) * PIXELS_PREVIEW;
   int preview_frame_b = ((preview_frame ) % 16) * PIXELS_PREVIEW;
-  int read_buffer = buffer_num ^ 1;
   int j=CCD_PIXEL_LIGHT_START/8;
   for (int i = 0; i < PIXELS_PREVIEW; i++)
   {
     // only extract the MSB and copy it to the preview buffer
-    preview_buffer[(preview_frame_r + i) * 3] = pixel_buffers[read_buffer][(j*8)*6];
-    preview_buffer[(preview_frame_g + i) * 3 + 1] = pixel_buffers[read_buffer][(j*8)*6+ 2];
-    preview_buffer[(preview_frame_b + i) * 3 + 2] = pixel_buffers[read_buffer][(j*8)*6 + 4];
+    preview_buffer[(preview_frame_r + i) * 3] = pixel_buffers[ak8419_read_pointer][(j*8)*6];
+    preview_buffer[(preview_frame_g + i) * 3 + 1] = pixel_buffers[ak8419_read_pointer][(j*8)*6+ 2];
+    preview_buffer[(preview_frame_b + i) * 3 + 2] = pixel_buffers[ak8419_read_pointer][(j*8)*6 + 4];
     j++;//Increase by 6 * 8 bytes 
   }
   preview_frame++;
 
-  write_ready = true;
-  data_ready = false;
+  ak8419_read_pointer=(ak8419_read_pointer+1)%ak8419_buffer_N;
   lines_remaining--;
   // printf("Lines remaing:%d\n",lines_remaining);
 }
