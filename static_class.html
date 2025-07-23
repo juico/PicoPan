@@ -37,7 +37,9 @@
             font-size: 14px;
             display: none; /* Initially hidden */
         }
-
+    #fileList table  { border-collapse:collapse; margin-top:6px; font-family:monospace; }
+    #fileList th, #fileList td { border:1px solid #888; padding:3px 6px; }
+    #statusBar { margin-top:6px; font-family:monospace; }
 
   </style>
   <script>
@@ -66,6 +68,13 @@
     this.jpegimage=null;
     this.verticalLine=null;
     this.plotBox=null;
+        // Capture
+    this.isCapturing = false;
+    this.progressStartTime = null;
+    this.totalLines = 0;
+        // SHOW FILES
+    this.statusBar     = null;
+    this.actionButtons = [];      // wszystkie <input type=button>
     window.onload = () => this.initialize();
   }
 
@@ -79,6 +88,8 @@
       this.verticalLine = document.getElementById('verticalLine');
       this.plotBox = document.getElementById('plotBox');
       this.imageContainer = document.getElementById('imageContainer');
+      this.statusBar     = document.getElementById("statusBar");
+      this.actionButtons = [...document.querySelectorAll("input[type=button]")];
 
 
       this.setupWebSocket();
@@ -92,7 +103,7 @@
              const rect = this.jpegimage.getBoundingClientRect();
 
 // Calculate the coordinates relative to the image
-const x = event.clientX - rect.left;            
+const x = event.clientX - rect.left;
 // Position the vertical line at the clicked x coordinate
 this.verticalLine.style.left = `${x}px`;
 this.verticalLine.style.display = 'block'; // Make the line visible
@@ -114,6 +125,8 @@ this.moveStepper(8*x);
 }).bind(this));
   }
 
+  disableButtons(flag){ this.actionButtons.forEach(b=>b.disabled = flag); }
+
   setupControls() {
     const buttons = [
       { id: "btn_capture", command: 0 },
@@ -130,6 +143,14 @@ this.moveStepper(8*x);
         this.column = 0;
       });
     });
+    document.getElementById("btn_list_files")
+            .addEventListener("click", () => { this.socket.send("LIST"); });
+  }
+
+  deleteFile(filename) {
+    if (confirm(`Are you sure you want to delete file ${filename}?`)) {
+      this.socket.send("DEL:" + filename);
+    }
   }
 
   setupWebSocket() {
@@ -174,25 +195,69 @@ this.moveStepper(8*x);
 
         offset += messageLength;
       }
-    } else {
-      console.log(event.data);
+
+    } else if (typeof event.data === "string") {
+      const msg = event.data;
+      if (msg.startsWith("LIST:")) {
+        // Otrzymana lista plików: generuj tabelę
+        const listContent = msg.substring(5);  // odetnij "LIST:"
+        const lines = listContent.split("\n").filter(line => line.length);
+        let html = "<table><tr><th>File</th><th>Size (bytes)</th><th>Actions</th></tr>";
+        for (const line of lines) {
+          const [name, size] = line.split(";");
+          html += `<tr><td>${name}</td><td>${this.humanFileSize(parseInt(size))}</td>
+                <td>
+                    <a href="http://192.168.4.1:80/file/${name}" download>Download</a>
+                    <button onclick="app.deleteFile('${name}')">DELETE</button>
+                </td></tr>`;
+        }
+        html += "</table>";
+        document.getElementById("fileList").innerHTML = html;
+      } else if (msg.startsWith("DELETING:")) {
+        const fn = msg.substring(9);
+        this.statusBar.textContent = `Deleting ${fn}...`;
+        this.disableButtons(true);
+      } else if (msg.startsWith("DELETED:")) {
+        const fn = msg.substring(8);
+        this.statusBar.textContent = `Deleted ${fn}`;
+        setTimeout(()=>{ this.statusBar.textContent=""; },1500);
+        this.socket.send("LIST");
+        this.disableButtons(false);
+      } else if (msg.startsWith("ERROR:")) {
+          alert(msg.substring(6));  // wyświetl komunikat błędu
+      } else if (msg.startsWith("L:")) {
+          const lineNum = parseInt(msg.substr(2));
+          this.updateProgress(lineNum);
+      } else if (msg === "PREVIEW_DONE") {
+        this.disableButtons(false);
+        this.statusBar.textContent = "Preview complete.";
+        setTimeout(()=>{ this.statusBar.textContent = ""; }, 3000);
+      } else {
+        console.log(event.data);
+      }
     }
   }
-  
-  handleSocketError(event){
-    this.connectionStateDiv.innerText="Disconnected";
-    let now = new Date();
-    if(this.lastConnect.getTime()-now.getTime>1000)
-  {
-    this.setupWebSocket();
-  }
-  else{
-    setTimeout(() => {
-        this.setupWebSocket();
-    }, 1000);
-
+  humanFileSize(bytes, si=false) {
+      const thresh = si ? 1000 : 1024;
+      if (bytes < thresh) return bytes + ' B';
+      const units = si
+        ? ['kB','MB','GB','TB','PB']
+        : ['KiB','MiB','GiB','TiB','PiB'];
+      let u = -1;
+      do {
+          bytes /= thresh; ++u;
+      } while (bytes >= thresh && u < units.length-1);
+      return bytes.toFixed(1) + ' ' + units[u];
   }
 
+  handleSocketError(evt) {
+    this.connectionStateDiv.textContent = "Disconnected";
+    const now = Date.now();
+    if (now - this.lastConnect.getTime() > 1000) {
+      this.setupWebSocket();              // pierwszy retry natychmiast
+    } else {
+      setTimeout(() => this.setupWebSocket(), 1000); // dalsze co sekundę
+    }
   }
   handleImageData(data, offset, length) {
     const imageDataArray = new Uint8Array(data.slice(offset, offset + length));
@@ -215,7 +280,7 @@ this.moveStepper(8*x);
     var tmp = new Uint8Array(data.slice(offset,offset+length));
 
       this.jpegdata = new Uint8Array([...this.jpegdata,...tmp]);
-    
+
     this.jpegimage.src=URL.createObjectURL(
   new Blob([this.jpegdata.buffer], { type: 'image/jpeg' } /* (1) */)
 );
@@ -297,6 +362,69 @@ this.moveStepper(8*x);
       this.histogramContext.stroke();
     });
   }
+  
+  updateProgress(lineNum) {
+      if (!this.isCapturing) return;  // ignoruj, jeśli nie w trybie skanowania
+      const now = Date.now();
+      // Ustaw czas startu przy pierwszym pomiarze
+      if (!this.progressStartTime) {
+          this.progressStartTime = now;
+      }
+      // Oblicz procent ukończenia
+      const percent = Math.floor((lineNum / this.totalLines) * 100);
+      // Oblicz średni czas na linię i estymowany czas do końca
+      const elapsedMs = now - this.progressStartTime;
+      let remainingMs = 0;
+      if (lineNum > 0) {
+          const avgTimePerLine = elapsedMs / lineNum;
+          remainingMs = (this.totalLines - lineNum) * avgTimePerLine;
+      }
+      let remainingSec = Math.max(0, Math.round(remainingMs / 1000));
+      // Sformatuj pozostały czas jako h:m:s
+      const remH = Math.floor(remainingSec / 3600);
+      remainingSec %= 3600;
+      const remM = Math.floor(remainingSec / 60);
+      const remS = remainingSec % 60;
+      let remainingStr = "";
+      if (remH > 0) {
+          remainingStr = `${remH}h ${remM}m ${remS}s`;
+      } else if (remM > 0) {
+          remainingStr = `${remM}m ${remS}s`;
+      } else {
+          remainingStr = `${remS}s`;
+      }
+      // Oblicz orientacyjny czas zakończenia (godzina)
+      let finishStr = "";
+      if (lineNum > 0 && remainingMs > 0) {
+          const finishTime = new Date(now + remainingMs);
+          const hh = finishTime.getHours().toString().padStart(2, '0');
+          const mm = finishTime.getMinutes().toString().padStart(2, '0');
+          const ss = finishTime.getSeconds().toString().padStart(2, '0');
+          finishStr = `${hh}:${mm}:${ss}`;
+      }
+      // Zaktualizuj pasek postępu i tekst statusu
+      const progElem = document.getElementById('progressBar');
+      if (progElem) {
+          progElem.value = lineNum;
+          progElem.max = this.totalLines;
+      }
+      this.statusBar.innerHTML = 
+          `Progress: <progress id="progressBar" value="${lineNum}" max="${this.totalLines}"></progress> ` +
+          `${percent}% (${lineNum}/${this.totalLines}) - Est. remaining: <b>${remainingStr}</b>` +
+          (finishStr ? ` - Finish at ${finishStr}` : "");
+      // Jeśli osiągnięto końcową linię, wyświetl komunikat o zakończeniu
+      if (lineNum >= this.totalLines) {
+          this.isCapturing = false;
+          const totalTimeMs = now - this.progressStartTime;
+          const totalSec = Math.round(totalTimeMs / 1000);
+          const totalMin = Math.floor(totalSec / 60);
+          const totalSecRemain = totalSec % 60;
+          let totalTimeStr = (totalMin > 0 ? `${totalMin}m ` : "") + `${totalSecRemain}s`;
+          this.statusBar.textContent = `Capture complete (${lineNum} lines, ${totalTimeStr})`;
+          // Odblokuj przyciski - skanowanie zakończone
+          this.disableButtons(false);
+      }
+  }
 
   sendCommand(command) {
     this.initialFrame = true;
@@ -304,26 +432,69 @@ this.moveStepper(8*x);
     const commandBuffer = new ArrayBuffer(18);
     const commandView = new DataView(commandBuffer);
     const cmdForm = document.getElementById("command_form");
+    
+    // schowaj listę plików, jeżeli była widoczna
+    document.getElementById("fileList").innerHTML = "";
 
-    // this.imageCanvas.width = Math.floor(cmdForm.lines.value / 8);
-    // this.column = 0;
-    if(command == 2){ //clear image when starting new preview
+    if (command === 0) {
+      // Rozpoczęto skanowanie: ustaw stan i zainicjuj licznik
+      this.isCapturing = true;
+      this.progressStartTime = null;
+      this.totalLines = parseInt(cmdForm.lines.value) || 0;
+      // Ukryj ewentualne nakładki (podgląd, focus, histogram)
+      this.verticalLine.style.display = 'none';
+      this.focusCanvas.style.display = 'none';
+      this.histogramCanvas.style.display = 'none';
+      this.plotBox.style.display = 'none';
+      // Wyłącz wszystkie przyciski (poza Abort) na czas skanowania
+      this.disableButtons(true);
+      document.getElementById("btn_abort").disabled = false;
+      // Pokaż pasek postępu (0% na start)
+      this.statusBar.innerHTML = 
+          `Progress: <progress id="progressBar" value="0" max="${this.totalLines}"></progress> ` +
+          `0% (0/${this.totalLines}) - Est. remaining: calculating...`;
+    }
+    if (command === 1) {  // FOCUS
+      this.focusCanvas.style.display = 'block';
+      this.histogramCanvas.style.display = 'none';
+      this.focusMax = Array(8).fill(0);
+    }
+    if (command === 4) {  // EXPOSE (histogram)
+        this.focusCanvas.style.display = 'none';
+        this.histogramCanvas.style.display = 'block';
+    }
+    if(command === 2){ //clear image when starting new preview
+      this.isCapturing = false;
+      this.disableButtons(true);
+      document.getElementById("btn_abort").disabled = false;
+      this.statusBar.textContent = "Preview running...";
       this.jpegdata=new Uint8Array();
       this.verticalLine.style.display = 'none'; // Make the line visible
       this.focusCanvas.style.display='none';
       this.histogramCanvas.style.display='none';
       this.plotBox.style.display = 'none';
     }
-    if(command == 2){//show focus plot when focus command is send
+    if(command === 2){//show focus plot when focus command is send
       this.focusCanvas.style.display='block';
       this.histogramCanvas.style.display='none';
       this.focusMax=Array(8).fill(0);
     }
-    if(command == 3){//show histogram plot when histogram command is send
-      this.focusCanvas.style.display='none';
-      this.histogramCanvas.style.display='block';
+    if (command === 3) {
+        // Jeśli przerywamy trwający skan, zresetuj pasek postępu
+        if (this.isCapturing) {
+            this.isCapturing = false;
+            this.statusBar.textContent = "Capture aborted.";
+            // (Opcjonalnie wyczyść komunikat po 5s)
+            setTimeout(() => {
+                if (this.statusBar.textContent.startsWith("Capture aborted")) {
+                    this.statusBar.textContent = "";
+                }
+            }, 5000);
+        }
+        // Odblokuj wszystkie przyciski po przerwaniu
+        this.disableButtons(false);
     }
-    
+
     commandView.setUint16(0, 1337, true);
     commandView.setUint8(2, command);
     commandView.setUint16(3, cmdForm.exp_time.value, true);
@@ -334,7 +505,6 @@ this.moveStepper(8*x);
     commandView.setUint16(13, cmdForm.crop_start.value, true);
     commandView.setUint16(15, cmdForm.crop_end.value, true);
     commandView.setUint8(17, cmdForm.preview_avg.value);
-
     this.socket.send(commandView.buffer);
   }
   moveStepper(position){
@@ -362,7 +532,7 @@ this.moveStepper(8*x);
 }
 
 // Instantiate the class
-new CanvasApp();
+window.app = new CanvasApp();
 
   </script>
 
@@ -384,18 +554,18 @@ new CanvasApp();
     </div>
 
   <div>
-    
+
     <form id="command_form">
       <label for="exp_time">Exposure time[1/s]:</label>
 
-      <input value="100" name="exp_time" type="number">
+      <input value="50" name="exp_time" type="number">
       <br>
       <label for="resolution">Resolution:</label>
       <input name="resolution" type="number">
       <br>
       <label for="gain">Gain:</label><input value="0" name="gain" type="number"><br>
-      <label for="lines">Lines:</label><input name="lines" type="number"><br>
-      <label for="steps_line">Steps per 100 lines:</label><input value="2164" name="steps_line" type="number"><br>
+      <label for="lines">Lines:</label><input name="lines" type="number" value="10820"><br>
+      <label for="steps_line">Steps per 100 lines:</label><input value="600" name="steps_line" type="number"><br>
 
 
       <label for="crop_start">Crop start:</label><input name="crop_start" type="number"><br>
@@ -407,8 +577,12 @@ new CanvasApp();
       <input type="button" id="btn_abort" value="abort">
       <input type="button" id="btn_expose" value="expose">
       <input type="button" id="btn_jpeg" value="jpeg preview">
+      <input type="button" id="btn_list_files" value="Show Files">
 
     </form>
+
+    <div id="fileList"></div>
+    <div id="statusBar"></div>
   </div>
 </body>
 
