@@ -21,18 +21,30 @@
 #endif
 #define MEM_ALIGNMENT               4
 #define MEM_SIZE                    40000
-#define MEMP_NUM_TCP_SEG            32
+//#define MEMP_NUM_TCP_SEG            24*9
 #define MEMP_NUM_ARP_QUEUE          10
+
+
+#define MEMP_NUM_TCP_SEG   24*8  // Default: 16 (TCP segments in flight)
+#define MEMP_NUM_PBUF      48  // Default: 16 (raw packet buffers)
+
 #define PBUF_POOL_SIZE              24
 #define LWIP_ARP                    1
 #define LWIP_ETHERNET               1
 #define LWIP_ICMP                   1
 #define LWIP_RAW                    1
 #define TCP_NODELAY                 1
-#define TCP_WND                     (8 * TCP_MSS)
+// #define TCP_WND                     (8 * TCP_MSS)
 #define TCP_MSS                     1460
-#define TCP_SND_BUF                 (8 * TCP_MSS)
-#define TCP_SND_QUEUELEN            ((4 * (TCP_SND_BUF) + (TCP_MSS - 1)) / (TCP_MSS))
+// #define TCP_SND_BUF                 (8 * TCP_MSS)
+// #define TCP_SND_QUEUELEN            ((4 * (TCP_SND_BUF) + (TCP_MSS - 1)) / (TCP_MSS))
+
+#define TCP_WND          (24 * TCP_MSS)  // Receive window (default: 4*MSS)
+#define TCP_SND_BUF      (24 * TCP_MSS)  // Send buffer (default: 4*MSS)
+#define TCP_SND_QUEUELEN (8 * TCP_SND_BUF / TCP_MSS)  // Send queue size
+#define LWIP_WND_SCALE    1   // Enable window scaling
+#define TCP_RCV_SCALE     8   // Scale factor (window = TCP_WND << scale)
+
 #define LWIP_NETIF_STATUS_CALLBACK  1
 #define LWIP_NETIF_LINK_CALLBACK    1
 #define LWIP_NETIF_HOSTNAME         1
@@ -52,7 +64,12 @@
 #define LWIP_NETIF_TX_SINGLE_PBUF   1
 #define DHCP_DOES_ARP_CHECK         0
 #define LWIP_DHCP_DOES_ACD_CHECK    0
+#define PBUF_POOL_SIZE     48  // Default: 16 (increase for concurrent transfers)
+#define PBUF_POOL_BUFSIZE  (TCP_MSS + 40)  // MSS + headers
 
+#define LWIP_TCP_TIMESTAMPS    1  // Better RTT estimation
+#define LWIP_TCP_SACK_OUT      1  // Selective ACK (retransmit efficiency)
+#define LWIP_TCP_CONGESTION    1  // Reno congestion control (default)
 #ifndef NDEBUG
 #define LWIP_DEBUG                  1
 #define LWIP_STATS                  1
