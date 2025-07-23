@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2022 Bill Greiman
+ * Copyright (c) 2011-2024 Bill Greiman
  * This file is part of the SdFat library for SD memory cards.
  *
  * MIT License
@@ -22,11 +22,13 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
-#ifndef SdioCard_h
-#define SdioCard_h
+/**
+ * \file
+ * \brief Classes for SDIO cards.
+ */
+#pragma once
 #include "../common/SysCall.h"
 #include "SdCardInterface.h"
-
 #define FIFO_SDIO 0
 #define DMA_SDIO 1
 /**
@@ -56,27 +58,24 @@ class SdioConfig {
 class SdioCard : public SdCardInterface {
  public:
   /** Initialize the SD card.
-   * \param[in] sdioConfig SDIO card configuration.
+   * \param[in] config SDIO card configuration.
    * \return true for success or false for failure.
    */
-  bool begin(SdioConfig sdioConfig);
+  bool begin(SdioConfig config);
   /** CMD6 Switch mode: Check Function Set Function.
    * \param[in] arg CMD6 argument.
    * \param[out] status return status data.
    *
    * \return true for success or false for failure.
    */
-  bool cardCMD6(uint32_t arg, uint8_t *status);
-  bool read_ext(uint8_t fno, uint8_t page, uint16_t offset, uint16_t len, uint8_t *reg_buf);
-
-
+  bool cardCMD6(uint32_t arg, uint8_t* status);
   /** Disable an SDIO card.
    * not implemented.
    */
-  void end() {}
+  void end();
 
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
-    uint32_t __attribute__((error("use sectorCount()"))) cardSize();
+  uint32_t __attribute__((error("use sectorCount()"))) cardSize();
 #endif  // DOXYGEN_SHOULD_SKIP_THIS
   /** Erase a range of sectors.
    *
@@ -92,7 +91,8 @@ class SdioCard : public SdCardInterface {
    */
   bool erase(uint32_t firstSector, uint32_t lastSector);
   /**
-   * \return code for the last error. See SdCardInfo.h for a list of error codes.
+   * \return code for the last error. See SdCardInfo.h for a list of error
+   * codes.
    */
   uint8_t errorCode() const;
   /** \return error data for last error. */
@@ -161,28 +161,22 @@ class SdioCard : public SdCardInterface {
    * \param[out] scr Value of SCR register.
    * \return true for success or false for failure.
    */
-  bool readSCR(scr_t *scr);
-  bool Acmd(uint8_t acommand, uint32_t arg);
+  bool readSCR(scr_t* scr);
+  /** Return the 64 byte SD Status register.
+   * \param[out] sds location for 64 status bytes.
+   * \return true for success or false for failure.
+   */
+  bool readSDS(sds_t* sds);
   /** Start a read multiple sectors sequence.
    *
    * \param[in] sector Address of first sector in sequence.
    *
    * \note This function is used with readData() and readStop() for optimized
-   * multiple sector reads.  SPI chipSelect must be low for the entire sequence.
+   * multiple sector reads.
    *
    * \return true for success or false for failure.
    */
   bool readStart(uint32_t sector);
-  /** Start a read multiple sectors sequence.
-   *
-   * \param[in] sector Address of first sector in sequence.
-   * \param[in] count Maximum sector count.
-   * \note This function is used with readData() and readStop() for optimized
-   * multiple sector reads.  SPI chipSelect must be low for the entire sequence.
-   *
-   * \return true for success or false for failure.
-   */
-  bool readStart(uint32_t sector, uint32_t count);
   /** End a read multiple sectors sequence.
    *
    * \return true for success or false for failure.
@@ -190,7 +184,7 @@ class SdioCard : public SdCardInterface {
   bool readStop();
   /** \return SDIO card status. */
   uint32_t status();
-    /**
+  /**
    * Determine the size of an SD flash memory card.
    *
    * \return The number of 512 byte data sectors in the card
@@ -219,7 +213,6 @@ class SdioCard : public SdCardInterface {
    * \return true for success or false for failure.
    */
   bool writeSector(uint32_t sector, const uint8_t* src);
-  bool startWriteSectors(uint32_t n);
   /**
    * Write multiple 512 byte sectors to an SD card.
    *
@@ -244,16 +237,6 @@ class SdioCard : public SdCardInterface {
    * \return true for success or false for failure.
    */
   bool writeStart(uint32_t sector);
-  /** Start a write multiple sectors sequence.
-   *
-   * \param[in] sector Address of first sector in sequence.
-   * \param[in] count Maximum sector count.
-   * \note This function is used with writeData() and writeStop()
-   * for optimized multiple sector writes.
-   *
-   * \return true for success or false for failure.
-   */
-  bool writeStart(uint32_t sector, uint32_t count);
 
   /** End a write multiple sectors sequence.
    *
@@ -266,7 +249,5 @@ class SdioCard : public SdCardInterface {
   static const uint8_t READ_STATE = 1;
   static const uint8_t WRITE_STATE = 2;
   uint32_t m_curSector;
-  SdioConfig m_sdioConfig;
   uint8_t m_curState = IDLE_STATE;
 };
-#endif  // SdioCard_h

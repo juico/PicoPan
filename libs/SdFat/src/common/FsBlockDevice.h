@@ -25,7 +25,7 @@
 #ifndef FsBlockDevice_h
 #define FsBlockDevice_h
 #include "SdCard/SdCard.h"
-#if defined HAS_SDIO_CLASS || defined USE_BLOCK_DEVICE_INTERFACE
+#if HAS_SDIO_CLASS || USE_BLOCK_DEVICE_INTERFACE
 typedef FsBlockDeviceInterface FsBlockDevice;
 #else
 typedef SdCard FsBlockDevice;

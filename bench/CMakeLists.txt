@@ -5,7 +5,7 @@ add_executable(bench
 
 target_link_libraries(bench PUBLIC pico_stdlib
                             PUBLIC sdfat
-                            PUBLIC sdio
+                            PUBLIC SDIO_RP2350
                             PUBLIC hardware_clocks 
                             PUBLIC hardware_pwm
 )

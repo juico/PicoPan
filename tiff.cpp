@@ -178,8 +178,8 @@ bool tiff_create(long image_length, long image_width) {
   uint32_t file_size =
       tiff_file.blockSize * tiff_file.ImageLength + start_image;
   file.preAllocate(file_size);
-  uint32_t currentsector = file.firstSector();
-  sd.card()->writeStart(currentsector, file_size / 512);
+  //uint32_t currentsector = file.firstSector();
+  //sd.card()->writeStart(currentsector, file_size / 512);
   uint8_t *header_buffer = (uint8_t *)malloc(HEADER_BLOCK_SIZE);
   if (header_buffer) {
     tiff_write_header(header_buffer, tiff_file);

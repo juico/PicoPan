@@ -87,7 +87,7 @@ target_link_libraries(PicoPan
         pico_ws_server
         pico_multicore
         sdfat
-        sdio
+        SDIO_RP2350
         hardware_pio hardware_dma hardware_pwm hardware_clocks
         pico_cyw43_driver
         pico_cyw43_arch_lwip_poll

@@ -52,7 +52,7 @@ const bool SKIP_FIRST_LATENCY = true;
 const size_t BUF_SIZE = 32768;
 
 // File size in MB where MB = 1,000,000 bytes.
-const uint32_t FILE_SIZE_MB = 500; // BUF_SIZE*5;
+const uint32_t FILE_SIZE_MB = 5; // BUF_SIZE*5;
 
 // Write pass count.
 const uint8_t WRITE_COUNT = 2;
@@ -63,12 +63,15 @@ const uint8_t READ_COUNT = 2;
 // End of configuration constants.
 //------------------------------------------------------------------------------
 // File size in bytes.
-const uint32_t FILE_SIZE = 4000 * BUF_SIZE; // 1000000UL*FILE_SIZE_MB;
+const uint32_t FILE_SIZE = 400 * BUF_SIZE; // 1000000UL*FILE_SIZE_MB;
 
 // Insure 4-byte alignment.
 uint32_t buf32[(BUF_SIZE + 3) / 4];
 uint8_t *buf = (uint8_t *)buf32;
-
+void sdio_log(const char *txt, uint32_t arg1, uint32_t arg2){
+    printf(txt);
+    printf(" %i , %i\n ",arg1,arg2);
+}
 #if SD_FAT_TYPE == 0
 SdFat sd;
 File file;
@@ -144,8 +147,8 @@ void setup() {
 }
 //------------------------------------------------------------------------------
 int main() {
-  set_sys_clock_khz(150000,true);
-  // set_sys_clock_khz(280000,true);
+  //set_sys_clock_khz(150000,true);
+   set_sys_clock_khz(300000,true);
   stdio_init_all();
   // stdout_uart_init();
   float s;
@@ -157,7 +160,7 @@ int main() {
   sleep_ms(5000);
   // Discard any input.
   //  clearSerialInput();
-    stepper_init();
+    //stepper_init();
 
 //move_to(40*40000, STEPPER_MOVE_SPEED, STEPPER_ACCEL);
 
@@ -171,7 +174,7 @@ int main() {
 #endif // HAS_UNUSED_STACK
   cout << "Hoi" << endl;
   if (!sd.begin(SD_CONFIG)) {
-    // sd.initErrorHalt(&Serial);
+    //sd.initErrorHalt(&Serial);
     cout << "oeps gaat niet goed" << endl;
   }
   if (sd.fatType() == FAT_TYPE_EXFAT) {
@@ -220,8 +223,8 @@ int main() {
     minLatency = 9999999;
     totalLatency = 0;
     skipLatency = SKIP_FIRST_LATENCY;
-    uint32_t currentsector = file.firstSector();
-    sd.card()->writeStart(currentsector, FILE_SIZE / 512);
+    //uint32_t currentsector = file.firstSector();
+    //sd.card()->writeStart(currentsector, FILE_SIZE / 512);
     sleep_ms(500);
     t = millis();
     for (uint32_t i = 0; i < n; i++) {

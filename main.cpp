@@ -18,6 +18,7 @@ extern "C" {
 #include "include/dnsserver.h"
 }
 #include <lwip/stats.h>
+#define ENABLE_ARDUINO_FEATURES 0
 #define MAX_CON 5
 uint32_t linecount = 0;
 uint32_t conn_list[MAX_CON];

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2020 Bill Greiman
+ * Copyright (c) 2011-2024 Bill Greiman
  * This file is part of the SdFat library for SD memory cards.
  *
  * MIT License
@@ -22,34 +22,28 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
-#include "SysCall.h"
-#if 0  // defined(__AVR_ATmega328P__) && !ENABLE_ARDUINO_FEATURES
-#include <avr/interrupt.h>
+#pragma once
+/** Use programmed I/O with FIFO. */
+#define FIFO_SDIO 0
+/** Use programmed I/O with DMA. */
+#define DMA_SDIO 1
+/**
+ * \class SdioConfig
+ * \brief SDIO card configuration.
+ */
+class SdioConfig {
+ public:
+  SdioConfig() {}
+  /**
+   * SdioConfig constructor.
+   * \param[in] opt SDIO options.
+   */
+  explicit SdioConfig(uint8_t opt) : m_options(opt) {}
+  /** \return SDIO card options. */
+  uint8_t options() { return m_options; }
+  /** \return true if DMA_SDIO. */
+  bool useDma() { return m_options & DMA_SDIO; }
 
-// ISR for timer 2 Compare A interrupt
-volatile uint16_t timer2 = 0;
-ISR(TIMER2_COMPA_vect) {
-  timer2++;
-}
-SdMillis_t SysCall::curTimeMS() {
-  if (TIMSK2 != (1 << OCIE2A)) {
-    // use system clock (clkI/O).
-    ASSR &= ~(1 << AS2);
-    // Clear Timer on Compare Match (CTC) mode
-    TCCR2A = (1 << WGM21);
-    // Only need 64x prescale bits in TCCR2B
-    TCCR2B = (1 << CS22);
-    // set TOP so timer period is 1 ms.
-    #if F_CPU/64000 > 250
-    #error F_CPU too large.
-    #endif  // F_CPU/64000 > 250
-    OCR2A = F_CPU/64000UL - 1;
-    // Enable interrupt.
-    TIMSK2 = (1 << OCIE2A);
-  }
-  cli();
-  uint16_t rtn = timer2;
-  sei();
-  return rtn;
-}
-#endif  // defined(__AVR_ATmega328P__) && !ENABLE_ARDUINO_FEATURES
+ private:
+  uint8_t m_options = FIFO_SDIO;
+};
